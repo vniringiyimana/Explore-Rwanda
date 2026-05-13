@@ -1,0 +1,73 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile information and role",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["tourist", "admin", "operator", "editor", "moderator"] },
+        "avatar": { "type": "string" },
+        "businessName": { "type": "string" },
+        "bio": { "type": "string" }
+      },
+      "required": ["id", "email", "name", "role"]
+    },
+    "Booking": {
+      "title": "Booking Record",
+      "description": "Details for a travel booking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "itemId": { "type": "number" },
+        "itemType": { "type": "string", "enum": ["destination", "hotel", "experience", "transport", "event"] },
+        "itemName": { "type": "string" },
+        "itemEmoji": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "partySize": { "type": "string" },
+        "status": { "type": "string", "enum": ["confirmed", "pending", "cancelled"] },
+        "price": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "momoNumber": { "type": "string" },
+        "seat": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["id", "itemId", "itemType", "itemName", "email", "date", "status", "price", "createdAt"]
+    },
+    "Message": {
+      "title": "Chat Message",
+      "description": "A message sent between users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "content": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "read": { "type": "boolean" },
+        "type": { "type": "string", "enum": ["direct", "broadcast", "support"] }
+      },
+      "required": ["id", "senderId", "senderName", "receiverId", "content", "timestamp", "read", "type"]
+    }
+  },
+  "firestore": {
+    "users": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "bookings": {
+      "schema": "Booking",
+      "description": "All trip and service bookings"
+    },
+    "messages": {
+      "schema": "Message",
+      "description": "Chat and broadcast messages"
+    }
+  }
+}

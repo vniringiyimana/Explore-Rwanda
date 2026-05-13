@@ -1,0 +1,59 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@400;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Playfair Display", serif;
+  
+  --color-forest-50: #f0f7f2;
+  --color-forest-100: #d4ebda;
+  --color-forest-200: #a8d6b4;
+  --color-forest-500: #2d7a4f;
+  --color-forest-600: #1a5c38;
+  --color-forest-700: #0d3d22;
+  --color-forest-800: #0d2818;
+  --color-forest-900: #0a1a0f;
+  
+  --color-gold-300: #f0d078;
+  --color-gold-400: #d4af37;
+  --color-gold-500: #c9a84c;
+  --color-gold-600: #b08d3a;
+
+  @keyframes slow-zoom {
+    0% { transform: scale(1); }
+    100% { transform: scale(1.1); }
+  }
+}
+
+@utility animate-slow-zoom {
+  animation: slow-zoom 30s ease-in-out infinite alternate;
+}
+
+@layer base {
+  body {
+    @apply bg-forest-900 text-white selection:bg-gold-500/30 font-sans;
+  }
+}
+
+@layer components {
+  .hero-gradient {
+    background: linear-gradient(135deg, #0a1a0f 0%, #0d2818 30%, #1a3a2a 60%, #0a1a0f 100%);
+  }
+  
+  .glass {
+    @apply bg-white/5 backdrop-blur-xl border border-white/10;
+  }
+  
+  .gold-gradient-text {
+    @apply bg-linear-to-br from-gold-300 via-gold-500 to-gold-400 bg-clip-text text-transparent;
+  }
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
