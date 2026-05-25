@@ -248,12 +248,109 @@ export const EXPERIENCES: Experience[] = [
 ];
 
 export const HOTELS: Hotel[] = [
-  { id: 1, name: "One&Only Gorilla's Nest", cat: "luxury", emoji: "🏔️", location: "Musanze", price: 850, rating: 4.9, rooms: 21, amenities: ["Spa", "Pool", "Restaurant", "Fireplace"] },
-  { id: 2, name: "Bisate Lodge", cat: "luxury", emoji: "🌿", location: "Volcanoes NP", price: 1200, rating: 5.0, rooms: 6, amenities: ["Butler", "Nature", "Fine Dining", "Heated Pool"] },
-  { id: 3, name: "Lake Kivu Serena", cat: "luxury", emoji: "🌅", location: "Rubavu", price: 220, rating: 4.7, rooms: 66, amenities: ["Beach", "Pool", "Spa", "Tennis"] },
-  { id: 4, name: "Nyungwe Forest Lodge", cat: "eco", emoji: "🌳", location: "Nyungwe", price: 350, rating: 4.6, rooms: 24, amenities: ["Hiking", "Tea Plantation", "Restaurant"] },
-  { id: 5, name: "Retreat Kigali", cat: "eco", emoji: "🌱", location: "Kigali", price: 95, rating: 4.4, rooms: 18, amenities: ["Yoga", "Garden", "Organic Café"] },
-  { id: 6, name: "Discover Rwanda Youth Hostel", cat: "budget", emoji: "🎒", location: "Kigali", price: 28, rating: 4.2, rooms: 40, amenities: ["WiFi", "Kitchen", "Tours Desk"] }
+  { 
+    id: 1, 
+    name: "One&Only Gorilla's Nest", 
+    cat: "luxury", 
+    emoji: "🏔️", 
+    location: "Musanze", 
+    price: 850, 
+    rating: 4.9, 
+    rooms: 21, 
+    amenities: ["Spa", "Pool", "Restaurant", "Fireplace"],
+    gallery: [
+      "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&q=80&w=800",
+      "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&q=80&w=800",
+      "https://images.unsplash.com/photo-1544124499-58ec529dd998?auto=format&fit=crop&q=80&w=800"
+    ],
+    reviews: [
+      { id: 'r1', userId: 'u1', userName: 'Alice W.', rating: 5, comment: 'An absolute dream! The service was impeccable.', date: '2024-05-10' },
+      { id: 'r2', userId: 'u2', userName: 'Bob M.', rating: 4, comment: 'Beautiful scenery, though a bit pricey.', date: '2024-05-12' }
+    ]
+  },
+  { 
+    id: 2, 
+    name: "Bisate Lodge", 
+    cat: "luxury", 
+    emoji: "🌿", 
+    location: "Volcanoes NP", 
+    price: 1200, 
+    rating: 5.0, 
+    rooms: 6, 
+    amenities: ["Butler", "Nature", "Fine Dining", "Heated Pool"],
+    gallery: [
+      "https://images.unsplash.com/photo-1445019980597-93fa8acb246c?auto=format&fit=crop&q=80&w=800",
+      "https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?auto=format&fit=crop&q=80&w=800",
+      "https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&q=80&w=800"
+    ],
+    reviews: [
+      { id: 'r3', userId: 'u3', userName: 'Charlie D.', rating: 5, comment: 'The architecture is stunning and the gorillas are so close!', date: '2024-05-13' }
+    ]
+  },
+  { 
+    id: 3, 
+    name: "Lake Kivu Serena", 
+    cat: "luxury", 
+    emoji: "🌅", 
+    location: "Rubavu", 
+    price: 220, 
+    rating: 4.7, 
+    rooms: 66, 
+    amenities: ["Beach", "Pool", "Spa", "Tennis"],
+    gallery: [
+      "https://images.unsplash.com/photo-1540541338287-41700207dee6?auto=format&fit=crop&q=80&w=800",
+      "https://images.unsplash.com/photo-1571003123894-1f0594ba2851?auto=format&fit=crop&q=80&w=800",
+      "https://images.unsplash.com/photo-1566665797739-1674de7a421a?auto=format&fit=crop&q=80&w=800"
+    ],
+    reviews: [
+      { id: 'r4', userId: 'u4', userName: 'Diana R.', rating: 4, comment: 'Great sunset views from the pool area.', date: '2024-05-08' }
+    ]
+  },
+  { 
+    id: 4, 
+    name: "Nyungwe Forest Lodge", 
+    cat: "eco", 
+    emoji: "🌳", 
+    location: "Nyungwe", 
+    price: 350, 
+    rating: 4.6, 
+    rooms: 24, 
+    amenities: ["Hiking", "Tea Plantation", "Restaurant"],
+    gallery: [
+        "https://images.unsplash.com/photo-1512918728675-ed5a9ecdebfd?auto=format&fit=crop&q=80&w=800",
+        "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&q=80&w=800"
+    ]
+  },
+  { 
+    id: 5, 
+    name: "Retreat Kigali", 
+    cat: "eco", 
+    emoji: "🌱", 
+    location: "Kigali", 
+    price: 95, 
+    rating: 4.4, 
+    rooms: 18, 
+    amenities: ["Yoga", "Garden", "Organic Café"],
+    gallery: [
+        "https://images.unsplash.com/photo-1561501900-3701fa6a0cf6?auto=format&fit=crop&q=80&w=800",
+        "https://images.unsplash.com/photo-1551882547-ff43c61f3630?auto=format&fit=crop&q=80&w=800"
+    ]
+  },
+  { 
+    id: 6, 
+    name: "Discover Rwanda Youth Hostel", 
+    cat: "budget", 
+    emoji: "🎒", 
+    location: "Kigali", 
+    price: 28, 
+    rating: 4.2, 
+    rooms: 40, 
+    amenities: ["WiFi", "Kitchen", "Tours Desk"],
+    gallery: [
+        "https://images.unsplash.com/photo-1555854877-bab0e564b8d5?auto=format&fit=crop&q=80&w=800",
+        "https://images.unsplash.com/photo-1520277739336-7bf67edfa768?auto=format&fit=crop&q=80&w=800"
+    ]
+  }
 ];
 
 export const PHRASEBOOK: Phrase[] = [
@@ -264,6 +361,8 @@ export const PHRASEBOOK: Phrase[] = [
   { en: "Help me", rw: "Mfashe", fr: "Aidez-moi", sw: "Nisaidie" },
   { en: "Delicious!", rw: "Biryoshye!", fr: "Délicieux!", sw: "Tamu sana!" }
 ];
+
+export const MASTER_EMAIL = 'vedasteniringiyimana12@gmail.com';
 
 export const MAP_POINTS: MapPoint[] = [
   { id: 'kigali', title: "Kigali", emoji: "🏙️", category: 'city', desc: "Rwanda's capital — clean, vibrant, and innovative. Home to the Genocide Memorial and amazing nightlife.", pop: "1.2M", altitude: "1,567m", coordinates: { cx: 265, cy: 190 } },

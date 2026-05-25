@@ -17,10 +17,12 @@ import LegalModal from './components/LegalModal';
 import { Booking, User, UserRole } from './types';
 import DashboardLayout from './components/dashboards/DashboardLayout';
 import { dbService } from './services/db';
+import { MASTER_EMAIL } from './constants';
 
 export default function App() {
   const [modalOpen, setModalOpen] = useState(false);
-  const [modalType, setModalType] = useState<'auth' | 'booking' | null>(null);
+  const [modalType, setModalType] = useState<'auth' | 'booking' | 'hotel-details' | null>(null);
+  const [selectedHotelId, setSelectedHotelId] = useState<number | null>(null);
   const [bookingData, setBookingData] = useState<{ category: 'destination' | 'hotel' | 'experience' | 'transport' | 'event', id: number } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [lang, setLang] = useState(localStorage.getItem('explore-rw-lang') || 'en');
@@ -35,15 +37,102 @@ export default function App() {
   // DB State synchronization
   const [dbState, setDbState] = useState(dbService.get());
 
+  // Automatic Booking Reminders
   useEffect(() => {
-    const handleUpdate = () => setDbState(dbService.get());
+    if (!user) return;
+    
+    // Check for bookings due tomorrow
+    const userBookings = dbState.bookings.filter(b => 
+      b.email.toLowerCase() === user.email.toLowerCase() && 
+      b.status === 'confirmed'
+    );
+    
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+    
+    const upcoming = userBookings.filter(b => b.date === tomorrowStr);
+    
+    if (upcoming.length > 0) {
+      const notifiedKeysString = sessionStorage.getItem('notified-bookings') || '[]';
+      let notifiedKeys: string[] = [];
+      try {
+        notifiedKeys = JSON.parse(notifiedKeysString);
+      } catch (e) {
+        notifiedKeys = [];
+      }
+      
+      const newToNotify = upcoming.filter(b => !notifiedKeys.includes(b.id));
+      
+      if (newToNotify.length > 0) {
+        newToNotify.forEach((booking, index) => {
+          // Stagger multiple notifications
+          setTimeout(() => {
+            showToast(`📅 Reminder: Your trip to ${booking.itemName} is tomorrow!`);
+          }, index * 1000);
+          notifiedKeys.push(booking.id);
+        });
+        sessionStorage.setItem('notified-bookings', JSON.stringify(notifiedKeys));
+      }
+    }
+  }, [user, dbState.bookings]);
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      const state = dbService.get();
+      setDbState(state);
+      if (user) {
+        const freshUser = state.users.find(u => u.id === user.id);
+        if (freshUser) {
+          setUser(freshUser);
+        }
+      }
+    };
     window.addEventListener('db-update', handleUpdate);
     return () => window.removeEventListener('db-update', handleUpdate);
+  }, [user]);
+
+  useEffect(() => {
+    const handleSwitch = (e: any) => {
+      if (e.detail && e.detail.userId) {
+        const state = dbService.get();
+        const found = state.users.find(u => u.id === e.detail.userId);
+        if (found) {
+          setUser(found);
+          setView('dashboard');
+          showToast(`Switched profile to ${found.name} (${found.role.toUpperCase()}) 🔐`);
+        }
+      }
+    };
+    window.addEventListener('switch-user', handleSwitch);
+    return () => window.removeEventListener('switch-user', handleSwitch);
   }, []);
 
   useEffect(() => {
     localStorage.setItem('explore-rw-lang', lang);
   }, [lang]);
+
+  useEffect(() => {
+    const handleOpenBookingEvent = (e: any) => {
+      if (e.detail && e.detail.category) {
+        handleOpenBooking(e.detail.category, e.detail.id);
+      }
+    };
+    window.addEventListener('open-booking', handleOpenBookingEvent);
+    return () => window.removeEventListener('open-booking', handleOpenBookingEvent);
+  }, []);
+
+  useEffect(() => {
+    const handleToast = (e: any) => showToast(e.detail);
+    window.addEventListener('app-toast', handleToast);
+    return () => window.removeEventListener('app-toast', handleToast);
+  }, []);
+
+  useEffect(() => {
+    const handleOpenAuthEvent = () => handleOpenAuth();
+    window.addEventListener('open-auth', handleOpenAuthEvent);
+    return () => window.removeEventListener('open-auth', handleOpenAuthEvent);
+  }, []);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -60,11 +149,18 @@ export default function App() {
     setModalType('booking');
     setModalOpen(true);
   };
+  
+  const handleOpenHotelDetails = (id: number) => {
+    setSelectedHotelId(id);
+    setModalType('hotel-details');
+    setModalOpen(true);
+  };
 
   const handleModalConfirm = (authUser: User, msg: string) => {
     setUser(authUser);
     setModalOpen(false);
     showToast(msg);
+    
     if (authUser.role !== UserRole.TOURIST) {
       setView('dashboard');
     }
@@ -123,8 +219,12 @@ export default function App() {
                onClose={() => setModalOpen(false)} 
                type={modalType}
                bookingData={bookingData}
+               hotelId={selectedHotelId}
+               user={user}
                onConfirm={handleModalConfirm}
                onCreateBooking={handleCreateBooking}
+               onOpenAuth={handleOpenAuth}
+               onBookFromDetails={(id) => handleOpenBooking('hotel', id)}
                lang={lang}
              />
            )}
@@ -149,7 +249,11 @@ export default function App() {
         <Destinations data={dbState.destinations} onSelect={(id) => handleOpenBooking('destination', id)} />
         <AIPlanner />
         <Experiences data={dbState.experiences} onBook={(id) => handleOpenBooking('experience', id)} />
-        <Hotels data={dbState.hotels} onBook={(id) => handleOpenBooking('hotel', id)} />
+        <Hotels 
+          data={dbState.hotels} 
+          onBook={(id) => handleOpenBooking('hotel', id)} 
+          onViewDetails={handleOpenHotelDetails}
+        />
         <TravelHub lang={lang} onBook={(id, cat) => handleOpenBooking(cat || 'transport', id)} />
         <CompanyInfo lang={lang} />
         <Translate onToast={showToast} />
@@ -169,8 +273,12 @@ export default function App() {
             onClose={() => setModalOpen(false)} 
             type={modalType}
             bookingData={bookingData}
+            hotelId={selectedHotelId}
+            user={user}
             onConfirm={handleModalConfirm}
             onCreateBooking={handleCreateBooking}
+            onOpenAuth={handleOpenAuth}
+            onBookFromDetails={(id) => handleOpenBooking('hotel', id)}
             lang={lang}
           />
         )}

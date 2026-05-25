@@ -1,30 +1,9 @@
 import React, { useState } from 'react';
-import { 
-  Users, 
-  Calendar, 
-  DollarSign, 
-  Star, 
-  Settings, 
-  Plus, 
-  MessageSquare,
-  TrendingUp,
-  MapPin,
-  ShieldCheck,
-  Edit,
-  Trash2,
-  CheckCircle,
-  Clock,
-  ChevronRight,
-  Filter,
-  BarChart3,
-  CalendarDays,
-  Tag,
-  Download,
-  XCircle
-} from 'lucide-react';
+import { Lock, Users, Calendar, DollarSign, Star, Settings, Plus, MessageSquare, TrendingUp, MapPin, ShieldCheck, Edit, Trash2, CheckCircle, Clock, ChevronRight, Filter, BarChart3, CalendarDays, Tag, Download, XCircle } from 'lucide-react';
 import { DashboardProps, UserRole } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
 import CommunicationCenter from './CommunicationCenter';
+import { MASTER_EMAIL } from '../../constants';
 
 interface Listing {
   id: string;
@@ -37,7 +16,21 @@ interface Listing {
 }
 
 export default function BusinessDashboard({ activeTab, user, bookings }: DashboardProps) {
-  const isAdmin = user.role === UserRole.ADMIN;
+  const isMaster = user.email.toLowerCase() === MASTER_EMAIL.toLowerCase();
+
+  if (user.role !== UserRole.OPERATOR && !isMaster) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-8 glass rounded-[3rem] border border-gold-500/20">
+        <Lock size={48} className="text-gold-500 mb-6" />
+        <h2 className="text-2xl font-display font-bold text-white mb-4">Partner Only Access</h2>
+        <p className="text-white/40 max-w-sm italic">
+          "The Business Hub is reserved for registered service providers and hotel partners. Interested in joining? Contact our partnership team."
+        </p>
+      </div>
+    );
+  }
+
+  const isAdmin = isMaster;
   const [currentImage, setCurrentImage] = useState(0);
   const images = [
     'https://images.unsplash.com/photo-1544124499-58ed34b79148?auto=format&fit=crop&q=80', // Luxury Suite

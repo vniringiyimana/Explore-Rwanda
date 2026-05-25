@@ -28,18 +28,143 @@ import {
   CheckCircle,
   XCircle,
   Filter,
-  Settings
+  Settings,
+  Upload,
+  Paperclip,
+  Check,
+  Trophy,
+  Target,
+  Award,
+  Zap,
+  TrendingUp,
+  Download,
+  Clock,
+  AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { DashboardProps, UserRole } from '../../types';
 import { generateItinerary } from '../../services/geminiService';
+import { dbService } from '../../services/db';
 import Markdown from 'react-markdown';
 
-export default function TouristDashboard({ activeTab, bookings, user }: DashboardProps) {
+const isNearEvent = (dateStr: string, timeStr?: string) => {
+  try {
+    const bookingTimeStr = timeStr || "09:00";
+    const eventDate = new Date(`${dateStr}T${bookingTimeStr}`);
+    if (isNaN(eventDate.getTime())) {
+      const fallbackDate = new Date(dateStr);
+      if (isNaN(fallbackDate.getTime())) return false;
+      const diffMs = fallbackDate.getTime() - Date.now();
+      return Math.abs(diffMs) <= 24 * 60 * 60 * 1000;
+    }
+    const diffMs = eventDate.getTime() - Date.now();
+    return Math.abs(diffMs) <= 24 * 60 * 60 * 1000;
+  } catch (e) {
+    return false;
+  }
+};
+
+// A gorgeous, high-fidelity loading state with stepped progression and sleek micro-animations
+function QRAnimationLoader() {
+  const [step, setStep] = React.useState(0);
+
+  React.useEffect(() => {
+    const timer1 = setTimeout(() => setStep(1), 600);
+    const timer2 = setTimeout(() => setStep(2), 1200);
+    const timer3 = setTimeout(() => setStep(3), 1800);
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+      clearTimeout(timer3);
+    };
+  }, []);
+
+  const steps = [
+    { label: "Establishing Secure Handshake", sub: "Connecting to RwandaHub GatekeeperNode..." },
+    { label: "Baking Cryptographic Token", sub: "Digitizing passenger biometric metadata..." },
+    { label: "Signing Ticket Payload", sub: "Applying central gateway signatures..." },
+    { label: "Rendering QR Code Vector", sub: "Assembling high-contrast scanner pattern..." }
+  ];
+
+  return (
+    <div className="flex flex-col items-center justify-center space-y-5 py-8 w-full">
+      <div className="relative w-24 h-24 flex items-center justify-center">
+        {/* Futuristic glowing scanning rings */}
+        <motion.div
+          animate={{ rotate: 360, scale: [1, 1.05, 1] }}
+          transition={{ repeat: Infinity, duration: 2.5, ease: "linear" }}
+          className="absolute inset-0 rounded-[1.5rem] border border-dashed border-gold-500/30"
+        />
+        <motion.div
+          animate={{ rotate: -360, scale: [1, 0.95, 1] }}
+          transition={{ repeat: Infinity, duration: 3.5, ease: "linear" }}
+          className="absolute inset-2 rounded-[1.2rem] border border-dotted border-gold-400/20"
+        />
+        
+        {/* Central pulsing shield */}
+        <motion.div
+          animate={{ scale: [0.92, 1.08, 0.92] }}
+          transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
+          className="w-12 h-12 rounded-2xl bg-gold-500/10 flex items-center justify-center text-gold-400 border border-gold-500/20 shadow-lg shadow-gold-500/5"
+        >
+          <ShieldCheck size={22} className="animate-pulse" />
+        </motion.div>
+
+        {/* Dynamic sweeping laser scanner line */}
+        <motion.div
+          animate={{ y: [-35, 35, -35] }}
+          transition={{ repeat: Infinity, duration: 1.8, ease: "easeInOut" }}
+          className="absolute left-4 right-4 h-0.5 bg-gradient-to-r from-transparent via-gold-400 to-transparent opacity-80"
+        />
+      </div>
+
+      <div className="text-center space-y-2 max-w-xs px-4">
+        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-gold-500/10 border border-gold-500/20">
+          <span className="w-1.5 h-1.5 rounded-full bg-gold-400 animate-ping" />
+          <span className="text-[8px] font-mono text-gold-400 font-bold uppercase tracking-widest">
+            SECURE DEPLOY: {Math.min(100, Math.round((step + 1) * 25))}%
+          </span>
+        </div>
+
+        <div className="h-8 flex flex-col justify-center">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={step}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.2 }}
+            >
+              <h5 className="text-[10px] font-bold text-white uppercase tracking-wider">
+                {steps[step]?.label}
+              </h5>
+              <p className="text-[8px] text-white/40 font-medium italic mt-0.5">
+                {steps[step]?.sub}
+              </p>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+
+        {/* High-fidelity custom progress bar */}
+        <div className="w-40 h-1 bg-white/5 rounded-full overflow-hidden mx-auto border border-white/5 relative">
+          <motion.div 
+            initial={{ width: "0%" }}
+            animate={{ width: `${(step + 1) * 25}%` }}
+            transition={{ duration: 0.4, ease: "easeInOut" }}
+            className="h-full bg-gradient-to-r from-gold-600 to-gold-400"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function TouristDashboard({ activeTab, bookings, user, onTabChange, voiceSearchQuery }: DashboardProps) {
   const isAdmin = user.role === UserRole.ADMIN;
   const [prompt, setPrompt] = useState('');
   const [itinerary, setItinerary] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [ticketSearch, setTicketSearch] = useState('');
   const [trips, setTrips] = useState([
     { id: 'T-102', name: 'Summer in the Virungas', duration: '5 Days', people: 2, status: 'Active', progress: 40, emoji: '🌋' },
     { id: 'T-105', name: 'Kivu Lakeshore Escape', duration: '3 Days', people: 4, status: 'Upcoming', progress: 0, emoji: '🌊' },
@@ -49,6 +174,72 @@ export default function TouristDashboard({ activeTab, bookings, user }: Dashboar
   const [editingTrip, setEditingTrip] = useState<any>(null);
   const [isAddingTrip, setIsAddingTrip] = useState(false);
   const [editingBooking, setEditingBooking] = useState<any>(null);
+
+  // Dedicated QR Code modal states inside TouristDashboard
+  const [selectedQRBooking, setSelectedQRBooking] = useState<any | null>(null);
+  const [isGeneratingQR, setIsGeneratingQR] = useState(false);
+  const [hasGeneratedQR, setHasGeneratedQR] = useState<Record<string, boolean>>({});
+  const [downloadedStatusId, setDownloadedStatusId] = useState<string | null>(null);
+  const [pdfStates, setPdfStates] = useState<Record<string, 'idle' | 'generating' | 'success'>>({});
+  const [downloadedPdfId, setDownloadedPdfId] = useState<string | null>(null);
+
+  // Activities & Goals State
+  const [completedActivities] = useState([
+    { id: 'ACT-001', name: 'Gorilla Trekking', category: 'Adventure', date: '2024-05-10', xp: 500, location: 'Musanze', emoji: '🦍' },
+    { id: 'ACT-002', name: 'Canopy Walk', category: 'Nature', date: '2024-05-12', xp: 250, location: 'Nyungwe', emoji: '🌲' },
+    { id: 'ACT-003', name: 'King\'s Palace Visit', category: 'Culture', date: '2024-05-14', xp: 150, location: 'Nyanza', emoji: '👑' },
+  ]);
+
+  const [travelGoals] = useState([
+    { id: 'GOAL-1', name: 'The Big Five', target: 5, current: 3, icon: '🦁', description: 'See all Big Five animals in Akagera.' },
+    { id: 'GOAL-2', name: 'Summit Seeker', target: 3, current: 1, icon: '🌋', description: 'Hike 3 major volcanoes.' },
+    { id: 'GOAL-3', name: 'Culture Collector', target: 10, current: 4, icon: '🎭', description: 'Visit 10 cultural heritage sites.' },
+    { id: 'GOAL-4', name: 'XP Master', target: 5000, current: 1250, icon: '✨', description: 'Reach 5,000 Travel XP.' },
+  ]);
+  
+  // Support Ticket Form State
+  const [showTicketForm, setShowTicketForm] = useState(false);
+  const [showContactForm, setShowContactForm] = useState(false);
+  const [ticketFormStatus, setTicketFormStatus] = useState<'idle' | 'submitting' | 'success'>('idle');
+  const [contactFormStatus, setContactFormStatus] = useState<'idle' | 'submitting' | 'success'>('idle');
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [dragActive, setDragActive] = useState(false);
+
+  // Dynamic user profile fields editable in Sandbox mode
+  const [profileName, setProfileName] = useState(user.name);
+  const [profileEmail, setProfileEmail] = useState(user.email);
+  const [profilePassword, setProfilePassword] = useState(user.password || 'password123');
+  const [profileBio, setProfileBio] = useState(user.bio || 'Eco-tourist exploring the thousand hills of Rwanda.');
+  const [profileAvatar, setProfileAvatar] = useState(user.avatar || '');
+  const [pushNotif, setPushNotif] = useState(true);
+  const [privacyMode, setPrivacyMode] = useState(false);
+
+  React.useEffect(() => {
+    if (user) {
+      setProfileName(user.name);
+      setProfileEmail(user.email);
+      setProfilePassword(user.password || 'password123');
+      setProfileBio(user.bio || 'Eco-tourist exploring the thousand hills of Rwanda.');
+      setProfileAvatar(user.avatar || '');
+    }
+  }, [user]);
+
+  const handleUpdateProfileSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      dbService.updateUser(user.id, {
+        name: profileName,
+        email: profileEmail,
+        password: profilePassword,
+        bio: profileBio,
+        avatar: profileAvatar,
+      });
+      window.dispatchEvent(new CustomEvent('app-toast', { detail: '📋 Profile & Settings updated locally!' }));
+    } catch (err: any) {
+      console.error(err);
+      window.dispatchEvent(new CustomEvent('app-toast', { detail: '❌ Failed to save profile details.' }));
+    }
+  };
 
   const handleDeleteTrip = (id: string) => {
     setTrips(trips.filter(t => t.id !== id));
@@ -88,6 +279,9 @@ export default function TouristDashboard({ activeTab, bookings, user }: Dashboar
       itemName: formData.get('itemName') as string,
       date: formData.get('date') as string,
       price: parseInt(formData.get('price') as string),
+      email: formData.get('email') as string,
+      phone: formData.get('phone') as string,
+      paymentMethod: formData.get('paymentMethod') as string || 'Credit Card'
     };
 
     setManagedBookings(managedBookings.map(b => b.id === editingBooking.id ? bookingData : b));
@@ -145,7 +339,7 @@ export default function TouristDashboard({ activeTab, bookings, user }: Dashboar
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="glass rounded-[3rem] p-8 border border-white/10 w-full max-w-lg relative z-10"
+        className="glass rounded-[3rem] p-8 border border-white/10 w-full max-w-lg relative z-10 max-h-[90vh] overflow-y-auto custom-scrollbar"
       >
         <h3 className="text-2xl font-display font-bold text-white mb-6">Modify Ticket</h3>
         <form onSubmit={handleSaveBooking} className="space-y-6">
@@ -163,6 +357,24 @@ export default function TouristDashboard({ activeTab, bookings, user }: Dashboar
               <input type="number" name="price" defaultValue={booking?.price} required className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:outline-none focus:border-gold-500/50" />
             </div>
           </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Traveler Email</label>
+              <input name="email" type="email" defaultValue={booking?.email || user?.email || ''} required className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:outline-none focus:border-gold-500/50" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Traveler Phone</label>
+              <input name="phone" type="tel" defaultValue={booking?.phone || ''} placeholder="+250 78X XXX XXX" required className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:outline-none focus:border-gold-500/50 font-mono" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Payment Method</label>
+            <select name="paymentMethod" defaultValue={booking?.paymentMethod || 'Credit Card'} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:outline-none focus:border-gold-500/50">
+              <option className="bg-forest-900" value="Credit Card">Credit Card</option>
+              <option className="bg-forest-900" value="MTN MoMo">MTN MoMo</option>
+              <option className="bg-forest-900" value="Airtel Money">Airtel Money</option>
+            </select>
+          </div>
           <div className="flex gap-4 pt-4">
             <button type="submit" className="flex-1 bg-gold-500 text-forest-900 py-4 rounded-2xl font-bold text-sm shadow-xl shadow-gold-500/20">Update Ticket</button>
             <button type="button" onClick={() => setEditingBooking(null)} className="flex-1 bg-white/5 text-white/40 py-4 rounded-2xl font-bold text-sm">Cancel</button>
@@ -171,6 +383,258 @@ export default function TouristDashboard({ activeTab, bookings, user }: Dashboar
       </motion.div>
     </div>
   );
+
+  const triggerDashboardQR = (id: string) => {
+    setIsGeneratingQR(true);
+    setTimeout(() => {
+      setIsGeneratingQR(false);
+      setHasGeneratedQR(prev => ({ ...prev, [id]: true }));
+    }, 2400);
+  };
+
+  const downloadDashboardTicket = (id: string) => {
+    setDownloadedStatusId(id);
+    setTimeout(() => {
+      setDownloadedStatusId(null);
+    }, 3000);
+  };
+
+  const downloadDashboardPDF = (booking: any) => {
+    // 1. Enter generating/loading state
+    setPdfStates(prev => ({ ...prev, [booking.id]: 'generating' }));
+
+    setTimeout(() => {
+      // 2. Build and trigger file download
+      const pdfContent = `%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /MediaBox [0 0 595 842] /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+5 0 obj
+<< /Length 250 >>
+stream
+BT
+/F1 20 Tf
+50 750 Td
+(RWANDAHUB SECURED GATE ACCESS PASS) Tj
+/F1 12 Tf
+0 -40 Td
+(Ticket Reference: ${booking.id}) Tj
+0 -25 Td
+(Adventure: ${booking.itemName} [${(booking.itemType || 'activity').toUpperCase()}]) Tj
+0 -25 Td
+(Date of Travel: ${booking.date}) Tj
+0 -25 Td
+(Group / Party Size: ${booking.partySize || 1} Guest\(s\)) Tj
+0 -25 Td
+(Primary Traveler: ${booking.email || 'Adventure Seeker'}) Tj
+0 -25 Td
+(Reservation Status: ${(booking.status || 'confirmed').toUpperCase()}) Tj
+0 -25 Td
+(Total Amount Invoiced: USD ${booking.price || 0}) Tj
+0 -40 Td
+(Check-in Protocol: Please display this gate pass and matches digital QR code) Tj
+0 -15 Td
+(to our stewards upon entering regional park checkpoints or accommodation desks.) Tj
+ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000010 00000 n 
+0000000060 00000 n 
+0000000120 00000 n 
+0000000240 00000 n 
+0000000320 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+570
+%%EOF`;
+
+      const blob = new Blob([pdfContent], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `RwandaHub_Ticket_${booking.id}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      // 3. Enter success state & trigger toast
+      setPdfStates(prev => ({ ...prev, [booking.id]: 'success' }));
+      setDownloadedPdfId(booking.id);
+
+      // 4. Automatically clear the toast after 4000ms
+      setTimeout(() => {
+        setDownloadedPdfId(null);
+      }, 4000);
+
+      // 5. Reset button state back to idle after 2500ms
+      setTimeout(() => {
+        setPdfStates(prev => ({ ...prev, [booking.id]: 'idle' }));
+      }, 2500);
+    }, 900);
+  };
+
+  const renderQRModal = (booking: any) => {
+    if (!booking) return null;
+    const isGenerating = isGeneratingQR;
+    const hasQR = hasGeneratedQR[booking.id];
+    const qrData = `rwandahub://ticket/${booking.id}/${encodeURIComponent(booking.itemName)}/${booking.date}/${booking.partySize || 'Solo'}`;
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="absolute inset-0 bg-forest-950/80 backdrop-blur-md" onClick={() => setSelectedQRBooking(null)} />
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          className="glass rounded-[3rem] p-8 border border-white/10 w-full max-w-md relative z-10 flex flex-col items-center"
+        >
+          {/* Header */}
+          <div className="w-full text-center pb-6 border-b border-dashed border-white/10 relative">
+            <span className="text-3xl mb-2 block">{booking.itemEmoji || '🏷️'}</span>
+            <h3 className="text-xl font-display font-bold text-white leading-tight">{booking.itemName}</h3>
+            <p className="text-[10px] text-white/30 font-bold uppercase tracking-widest mt-1">Digital Venue Pass</p>
+
+            <div className="absolute -left-11 top-full -translate-y-1/2 w-6 h-6 rounded-full bg-forest-900 border-r border-white/10 opacity-30" />
+            <div className="absolute -right-11 top-full -translate-y-1/2 w-6 h-6 rounded-full bg-forest-900 border-l border-white/10 opacity-30" />
+          </div>
+
+          {/* Body */}
+          <div className="w-full space-y-4 py-6 border-b border-dashed border-white/10">
+            <div className="grid grid-cols-2 gap-4 text-[10px] uppercase font-bold tracking-widest text-white/50">
+              <div>
+                <span className="text-[8px] text-white/20 block mb-0.5">Booking ID</span>
+                <span className="text-white font-mono break-all">{booking.id}</span>
+              </div>
+              <div>
+                <span className="text-[8px] text-white/20 block mb-0.5">Date</span>
+                <span className="text-white font-mono">{booking.date}</span>
+              </div>
+              <div>
+                <span className="text-[8px] text-white/20 block mb-0.5">Price Group</span>
+                <span className="text-white font-mono">${booking.price}</span>
+              </div>
+              <div>
+                <span className="text-[8px] text-white/20 block mb-0.5">Holder Code</span>
+                <span className="text-white font-mono truncate block max-w-[100px]">{booking.email?.split('@')[0]}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Actions & QR Code Wrapper */}
+          <div className="w-full pt-6 flex flex-col items-center justify-center min-h-[160px]">
+            {downloadedStatusId && (
+              <motion.div 
+                initial={{ opacity: 0, y: -5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="w-full mb-4 text-center bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-wider"
+              >
+                ✓ Secure Device Pass saved offline
+              </motion.div>
+            )}
+
+            {downloadedPdfId && (
+              <motion.div 
+                initial={{ opacity: 0, y: -5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="w-full mb-4 text-center bg-gold-500/10 border border-gold-500/20 text-gold-400 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-wider"
+              >
+                ✓ Secure Ticket PDF Generated & Downloaded
+              </motion.div>
+            )}
+
+            {hasQR ? (
+              <div className="flex flex-col items-center space-y-4">
+                <div className="relative p-2.5 bg-white rounded-2xl group/qr h-36 w-36 shadow-lg shadow-gold-500/10">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&color=c9a84c&bgcolor=0a1a0f&data=${encodeURIComponent(qrData)}`}
+                    alt="Scan Code"
+                    className="w-full h-full bg-forest-900 rounded-lg shadow-inner"
+                  />
+                  <motion.div
+                    animate={{ y: [0, 126, 0] }}
+                    transition={{ repeat: Infinity, duration: 2.2, ease: "easeInOut" }}
+                    className="absolute left-2.5 right-2.5 h-0.5 bg-gold-400 shadow-[0_0_8px_4px_rgba(212,175,55,0.45)] pointer-events-none"
+                  />
+                </div>
+                
+                <div className="flex items-center gap-2 flex-wrap justify-center w-full">
+                  <button
+                    onClick={() => downloadDashboardTicket(booking.id)}
+                    className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-[8px] font-black uppercase tracking-widest border border-white/10 flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Download size={10} /> Save Offline copy
+                  </button>
+
+                  <button
+                    onClick={() => pdfStates[booking.id] !== 'generating' && downloadDashboardPDF(booking)}
+                    disabled={pdfStates[booking.id] === 'generating'}
+                    className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all cursor-pointer shadow-md relative ${
+                      pdfStates[booking.id] === 'generating'
+                        ? 'bg-white/5 border border-white/10 text-white/40 select-none cursor-not-allowed animate-pulse'
+                        : pdfStates[booking.id] === 'success'
+                        ? 'bg-emerald-500 text-white shadow-xl shadow-emerald-500/20'
+                        : 'bg-gold-500 hover:bg-gold-400 text-forest-900 shadow-gold-500/5 hover:scale-102'
+                    }`}
+                  >
+                    {pdfStates[booking.id] === 'generating' ? (
+                      <>
+                        <RefreshCw size={10} className="animate-spin text-gold-400" />
+                        Generating PDF...
+                      </>
+                    ) : pdfStates[booking.id] === 'success' ? (
+                      <>
+                        <CheckCircle size={10} className="text-white animate-bounce" />
+                        PDF Downloaded!
+                      </>
+                    ) : (
+                      <>
+                        <FileText size={10} />
+                        Download Ticket PDF
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            ) : isGenerating ? (
+              <QRAnimationLoader />
+            ) : (
+              <div className="w-full flex flex-col items-center space-y-4">
+                <button
+                  onClick={() => triggerDashboardQR(booking.id)}
+                  className="w-full py-4 bg-gold-500 hover:bg-gold-400 text-forest-900 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-gold-500/20 hover:scale-102 transition-all cursor-pointer"
+                >
+                  Generate QR Gate Pass
+                </button>
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={() => setSelectedQRBooking(null)}
+            className="mt-6 text-white/30 hover:text-white/60 text-[10px] font-black uppercase tracking-widest transition-colors cursor-pointer"
+          >
+            Close Voucher Window
+          </button>
+        </motion.div>
+      </div>
+    );
+  };
 
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
@@ -210,12 +674,250 @@ export default function TouristDashboard({ activeTab, bookings, user }: Dashboar
     });
   };
 
+  const handleTicketSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget as HTMLFormElement);
+    const subject = formData.get('subject') as string;
+    const priority = formData.get('priority') as string;
+    const description = formData.get('description') as string;
+
+    setTicketFormStatus('submitting');
+    
+    // Save to DB
+    dbService.sendMessage({
+      senderId: user.id,
+      senderName: user.name,
+      receiverId: '1', // Admin
+      content: `[TICKET - ${priority}] ${subject}: ${description}`,
+      type: 'support'
+    });
+
+    setTimeout(() => {
+      setTicketFormStatus('success');
+      setAttachedFiles([]);
+      setTimeout(() => {
+        setTicketFormStatus('idle');
+        setShowTicketForm(false);
+      }, 3000);
+    }, 1500);
+  };
+
+  const handleContactSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget as HTMLFormElement);
+    const name = formData.get('name') as string;
+    const email = formData.get('email') as string;
+    const subject = formData.get('subject') as string;
+    const message = formData.get('message') as string;
+
+    // Basic validation
+    if (!name || !email || !subject || !message) return;
+    if (!email.includes('@')) return;
+
+    setContactFormStatus('submitting');
+    
+    // Save to DB as support message
+    dbService.sendMessage({
+      senderId: user.id,
+      senderName: name,
+      receiverId: '1', // Admin
+      content: `[CONTACT] ${subject}: ${message} (Reply to: ${email})`,
+      type: 'support'
+    });
+
+    setTimeout(() => {
+      setContactFormStatus('success');
+      setTimeout(() => {
+        setContactFormStatus('idle');
+        setShowContactForm(false);
+      }, 3000);
+    }, 1500);
+  };
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const files = Array.from(e.dataTransfer.files);
+      setAttachedFiles(prev => [...prev, ...files]);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const files = Array.from(e.target.files);
+      setAttachedFiles(prev => [...prev, ...files]);
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setAttachedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
   const travelPatterns = [
     { label: 'Adventure', icon: '🌋', items: ['5-day Gorilla Trekking', 'Nyungwe Canopy & Nature', 'Volcanoes Hiking Safari'] },
     { label: 'Relaxation', icon: '🌊', items: ['Lake Kivu Weekend Escape', 'Kigali Spa & Luxury Retreat', 'Twin Lakes Serenity'] },
     { label: 'Culture', icon: '🏛️', items: ['Nyanza King\'s Palace Tour', 'Kigali Art & History Walk', 'Rural Village Experience'] },
     { label: 'Wildlife', icon: '🐘', items: ['Akagera Big Five Safari', 'Bird Watching in Bugesera', 'Primate Adventure'] }
   ];
+
+  const renderActivitiesAndGoals = () => (
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-12">
+      <div className="flex justify-between items-center px-2">
+        <div>
+          <h2 className="text-2xl font-display font-bold text-white flex items-center gap-3">
+            <Trophy className="text-gold-500" size={24} /> Journey Milestones
+          </h2>
+          <p className="text-xs text-white/30 italic">\"Every step in Rwanda is a story. Track yours here.\"</p>
+        </div>
+      </div>
+
+      {/* Progress Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="glass rounded-3xl p-6 border border-white/5 bg-gradient-to-br from-gold-500/10 to-transparent">
+          <p className="text-[10px] font-black text-white/20 uppercase tracking-widest mb-4">Total Experience</p>
+          <div className="flex items-baseline gap-2 mb-2">
+            <span className="text-3xl font-display font-bold text-white">1,250</span>
+            <span className="text-xs font-bold text-gold-500">XP</span>
+          </div>
+          <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+            <motion.div initial={{ width: 0 }} animate={{ width: '25%' }} className="h-full bg-gold-500" />
+          </div>
+          <p className="text-[10px] text-white/30 mt-2">Level 4 Nomad • 750 XP to next level</p>
+        </div>
+
+        <div className="glass rounded-3xl p-6 border border-white/5 bg-gradient-to-br from-emerald-500/10 to-transparent">
+          <p className="text-[10px] font-black text-white/20 uppercase tracking-widest mb-4">Goals Completed</p>
+          <div className="flex items-baseline gap-2 mb-2">
+            <span className="text-3xl font-display font-bold text-white">2</span>
+            <span className="text-xs font-bold text-emerald-500">of 12</span>
+          </div>
+          <div className="h-1 w-full bg-emerald-500/10 rounded-full overflow-hidden">
+            <motion.div initial={{ width: 0 }} animate={{ width: '16%' }} className="h-full bg-emerald-500" />
+          </div>
+          <p className="text-[10px] text-white/30 mt-2">Rising Explorer Status</p>
+        </div>
+
+        <div className="glass rounded-3xl p-6 border border-white/5 bg-gradient-to-br from-blue-500/10 to-transparent">
+          <p className="text-[10px] font-black text-white/20 uppercase tracking-widest mb-4">Badges Earned</p>
+          <div className="flex items-baseline gap-2 mb-2">
+            <span className="text-3xl font-display font-bold text-white">4</span>
+            <span className="text-xs font-bold text-blue-400">Total</span>
+          </div>
+          <p className="text-[10px] text-white/30 mt-2">Top 15% of monthly travelers</p>
+        </div>
+
+        <div className="glass rounded-3xl p-6 border border-white/5 bg-gradient-to-br from-purple-500/10 to-transparent">
+          <p className="text-[10px] font-black text-white/20 uppercase tracking-widest mb-4">Provinces Visited</p>
+          <div className="flex items-baseline gap-2 mb-2">
+            <span className="text-3xl font-display font-bold text-white">3</span>
+            <span className="text-xs font-bold text-white/40">of 5</span>
+          </div>
+          <p className="text-[10px] text-white/30 mt-2">North, South, and Kigali City</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Travel Goals */}
+        <div className="lg:col-span-2 space-y-6">
+          <div className="flex items-center justify-between px-2">
+            <h3 className="text-lg font-display font-bold text-white flex items-center gap-2">
+              <Target className="text-gold-500" size={20} /> Active Missions
+            </h3>
+            <span className="text-[10px] font-black text-white/20 uppercase tracking-widest">In Progress</span>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {travelGoals.map((goal) => (
+              <div key={goal.id} className="glass rounded-[2rem] p-6 border border-white/5 hover:border-gold-500/20 transition-all group">
+                <div className="flex justify-between items-start mb-4">
+                  <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                    {goal.icon}
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] font-black text-gold-500 uppercase tracking-widest">{goal.current} / {goal.target}</span>
+                  </div>
+                </div>
+                <h4 className="text-sm font-bold text-white mb-1">{goal.name}</h4>
+                <p className="text-[10px] text-white/40 mb-4 leading-relaxed line-clamp-2 italic">\"{goal.description}\"</p>
+                
+                <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                  <motion.div 
+                    initial={{ width: 0 }} 
+                    animate={{ width: `${(goal.current / goal.target) * 100}%` }} 
+                    className="h-full bg-gold-500" 
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="glass rounded-[2rem] p-8 border border-white/5 text-center bg-gradient-to-t from-gold-500/5 to-transparent">
+            <Award className="mx-auto text-gold-500/50 mb-4" size={32} />
+            <h4 className="text-white font-bold mb-2">Claim Your Rewards</h4>
+            <p className="text-[10px] text-white/40 mb-6 italic">Completing goals unlocks exclusive discounts and hidden experiences.</p>
+            <button className="px-8 py-3 bg-white/5 border border-white/10 rounded-xl text-[10px] font-black text-white uppercase tracking-[0.2em] hover:bg-gold-500 hover:text-forest-900 transition-all">View All Challenges</button>
+          </div>
+        </div>
+
+        {/* Activity Feed */}
+        <div className="space-y-6">
+          <div className="flex items-center justify-between px-2">
+            <h3 className="text-lg font-display font-bold text-white flex items-center gap-2">
+              <Zap className="text-gold-500" size={20} /> History
+            </h3>
+            <button className="text-[10px] font-black text-white/20 uppercase tracking-widest hover:text-white transition-colors">View All</button>
+          </div>
+
+          <div className="space-y-4">
+            {completedActivities.map((activity) => (
+              <div key={activity.id} className="glass rounded-3xl p-5 border border-white/5 flex items-center gap-4 hover:bg-white/5 transition-all">
+                <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center text-xl shadow-inner">
+                  {activity.emoji}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between items-start mb-0.5">
+                    <h4 className="text-xs font-bold text-white truncate">{activity.name}</h4>
+                    <span className="text-[9px] font-bold text-gold-500">+{activity.xp} XP</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] text-white/20 uppercase font-black tracking-widest">{activity.date}</span>
+                    <span className="w-1 h-1 rounded-full bg-white/10" />
+                    <span className="text-[9px] text-white/40 font-bold">{activity.location}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            <div className="pt-4 px-2">
+              <div className="glass rounded-3xl p-6 border border-white/5 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500">
+                    <TrendingUp size={16} />
+                  </div>
+                  <p className="text-[10px] font-bold text-white/60">Weekly momentum is up 14%</p>
+                </div>
+                <button className="w-full py-4 bg-white/5 border border-white/10 rounded-2xl text-[9px] font-bold text-white/40 uppercase tracking-widest hover:bg-white/10 hover:text-white transition-all flex items-center justify-center gap-2">
+                   Sync Garmin / Strava
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   const renderPlanner = () => (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 overflow-hidden relative min-h-[80vh]">
@@ -378,10 +1080,6 @@ export default function TouristDashboard({ activeTab, bookings, user }: Dashboar
     </div>
   );
 
-  if (activeTab === 'planner') {
-    return renderPlanner();
-  }
-
   const renderTrips = () => (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex justify-between items-center px-2">
@@ -451,68 +1149,138 @@ export default function TouristDashboard({ activeTab, bookings, user }: Dashboar
     </div>
   );
 
-  const renderTickets = () => (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex justify-between items-center px-2">
-        <h2 className="text-2xl font-display font-bold text-white">Digital Tickets</h2>
-        <div className="flex gap-3">
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" size={16} />
-            <input type="text" placeholder="Search tickets..." className="bg-white/5 border border-white/10 rounded-2xl pl-12 pr-6 py-2.5 text-xs text-white focus:outline-none focus:border-gold-500/50" />
+  const renderTickets = () => {
+    const activeSearchKey = (ticketSearch || voiceSearchQuery || '').toLowerCase();
+    const filteredBookings = managedBookings.filter(b => 
+      b.itemName.toLowerCase().includes(activeSearchKey) || 
+      b.id.toLowerCase().includes(activeSearchKey) ||
+      (b.notes || '').toLowerCase().includes(activeSearchKey)
+    );
+
+    return (
+      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="flex justify-between items-center px-2">
+          <div className="space-y-1">
+            <h2 className="text-2xl font-display font-bold text-white">Digital Tickets</h2>
+            {voiceSearchQuery && (
+              <p className="text-[10px] text-gold-400 font-bold uppercase animate-pulse">Filtered by voice command: "{voiceSearchQuery}"</p>
+            )}
+          </div>
+          <div className="flex gap-3">
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" size={16} />
+              <input 
+                type="text" 
+                value={ticketSearch}
+                onChange={(e) => setTicketSearch(e.target.value)}
+                placeholder="Search tickets..." 
+                className="bg-white/5 border border-white/10 rounded-2xl pl-12 pr-6 py-2.5 text-xs text-white focus:outline-none focus:border-gold-500/50" 
+              />
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {managedBookings.map((booking, idx) => (
-          <div key={idx} className="glass rounded-[2.5rem] p-6 border border-white/5 relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-              <Ticket size={100} />
-            </div>
-            <div className="flex flex-col h-full">
-              <div className="flex justify-between items-start mb-6">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center text-2xl">{booking.itemEmoji}</div>
-                  <div>
-                    <h4 className="text-sm font-bold text-white">{booking.itemName}</h4>
-                    <p className="text-[10px] text-white/40 uppercase tracking-widest">{booking.date}</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {filteredBookings.map((booking, idx) => {
+          const isNear = isNearEvent(booking.date, booking.time);
+          return (
+            <div 
+              key={idx} 
+              className={`glass rounded-[2.5rem] p-6 border relative overflow-hidden group transition-all duration-300 flex flex-col justify-between ${
+                isNear 
+                  ? 'border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.1)] bg-gradient-to-b from-forest-900/50 via-forest-950 to-amber-950/10' 
+                  : 'border-white/5'
+              }`}
+            >
+              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                <Ticket size={100} />
+              </div>
+
+              {isNear && (
+                <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-amber-500 to-transparent animate-[pulse_1.5s_infinite] opacity-80" />
+              )}
+
+              <div className="flex flex-col h-full justify-between">
+                <div className="flex justify-between items-start mb-6">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center text-2xl relative">
+                      {booking.itemEmoji}
+                      {isNear && (
+                        <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-amber-500 border border-forest-950 flex items-center justify-center text-[7px] font-black text-white">!</span>
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-white">{booking.itemName}</h4>
+                      <p className="text-[10px] text-white/40 uppercase tracking-widest flex items-center gap-1.5">
+                        {booking.date}
+                        {isNear && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[6.5px] font-bold uppercase tracking-wide animate-pulse">
+                            ⚠️ within 24h
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-display font-bold text-gold-400">${booking.price}</p>
+                    <p className="text-[9px] font-black text-white/20 uppercase tracking-tighter">Paid Full</p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-lg font-display font-bold text-gold-400">${booking.price}</p>
-                  <p className="text-[9px] font-black text-white/20 uppercase tracking-tighter">Paid Full</p>
+
+                {/* Traveler & Payment Contact Details */}
+                <div className="py-2.5 my-2 border-y border-white/5 space-y-1 text-[9px] uppercase font-bold tracking-wider text-white/30">
+                  <div className="flex justify-between items-center">
+                    <span>Email:</span>
+                    <span className="text-white font-mono lowercase">{booking.email}</span>
+                  </div>
+                  {booking.phone && (
+                    <div className="flex justify-between items-center">
+                      <span>Phone:</span>
+                      <span className="text-white font-mono">{booking.phone}</span>
+                    </div>
+                  )}
+                  {booking.paymentMethod && (
+                    <div className="flex justify-between items-center">
+                      <span>Payment Method:</span>
+                      <span className="text-gold-400 font-mono text-[8px] tracking-normal">{booking.paymentMethod}</span>
+                    </div>
+                  )}
                 </div>
-              </div>
               
-              <div className="mt-auto flex justify-between items-end">
-                <div className="space-y-1">
-                   <p className="text-[10px] font-black text-white/20 uppercase tracking-widest">Entry Code</p>
-                   <p className="text-sm font-mono font-bold text-white tracking-[0.2em]">{booking.id}</p>
-                </div>
-                <div className="flex gap-2">
-                   <button 
-                    onClick={() => setEditingBooking(booking)}
-                    className="p-3 bg-white/5 rounded-xl text-white/40 hover:text-gold-500 transition-all"
-                  ><Edit size={16} /></button>
-                  <button className="px-4 py-2 bg-gold-500 text-forest-900 rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all">View QR</button>
-                  <button 
-                    onClick={() => handleCancelBooking(booking.id)}
-                    className="px-4 py-2 bg-white/5 text-white/40 rounded-xl text-[10px] font-black uppercase tracking-widest hover:text-red-400 hover:bg-red-400/5 transition-all"
-                  >Cancel</button>
+                <div className="mt-auto flex justify-between items-end">
+                  <div className="space-y-1">
+                     <p className="text-[10px] font-black text-white/20 uppercase tracking-widest">Entry Code</p>
+                     <p className="text-sm font-mono font-bold text-white tracking-[0.2em]">{booking.id}</p>
+                  </div>
+                  <div className="flex gap-2">
+                     <button 
+                      onClick={() => setEditingBooking(booking)}
+                      className="p-3 bg-white/5 rounded-xl text-white/40 hover:text-gold-500 transition-all"
+                    ><Edit size={16} /></button>
+                    <button onClick={() => setSelectedQRBooking(booking)} className="px-4 py-2 bg-gold-500 text-forest-900 rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all cursor-pointer">View QR</button>
+                    <button 
+                      onClick={() => handleCancelBooking(booking.id)}
+                      className="px-4 py-2 bg-white/5 text-white/40 rounded-xl text-[10px] font-black uppercase tracking-widest hover:text-red-400 hover:bg-red-400/5 transition-all"
+                    >Cancel</button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        ))}
-        {managedBookings.length === 0 && (
+          );
+        })}
+        {filteredBookings.length === 0 && (
           <div className="col-span-full glass rounded-[2rem] p-12 border border-white/5 text-center">
             <Ticket size={40} className="mx-auto text-white/10 mb-4" />
-            <p className="text-sm text-white/30 italic animate-pulse">Your ticket wallet is empty.</p>
+            <p className="text-sm text-white/30 italic animate-pulse">No tickets match your search parameters.</p>
           </div>
         )}
       </div>
     </div>
   );
+};
 
   const renderWishlist = () => (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -665,74 +1433,362 @@ export default function TouristDashboard({ activeTab, bookings, user }: Dashboar
     </div>
   );
 
-  const renderAssistance = () => (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex justify-between items-center px-2">
-        <h2 className="text-2xl font-display font-bold text-white">Help & Assistance</h2>
-        <span className="px-4 py-1.5 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-full text-[10px] font-black uppercase tracking-[0.2em]">Support Live</span>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {[
-          { icon: MessageSquare, title: 'Live Chat', desc: 'Speak with a travel ranger instantly.', action: 'Start Chat' },
-          { icon: LifeBuoy, title: 'Emergency', desc: 'Police, Hospital, and SOS contacts.', action: 'View Contacts' },
-          { icon: FileText, title: 'Guides', desc: 'Cultural etiquette and travel laws.', action: 'Read More' },
-          { icon: ShieldCheck, title: 'Insurance', desc: 'Manage your travel protection.', action: 'Details' },
-        ].map((item, i) => (
-          <div key={i} className="glass rounded-[2rem] p-8 border border-white/5 group hover:border-gold-500/20 transition-all cursor-pointer">
-            <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center mb-6 text-gold-500 group-hover:scale-110 group-hover:bg-gold-500/10 transition-all">
-              <item.icon size={24} />
+  const renderAssistance = () => {
+    const renderCardContainer = () => (
+      <>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[
+            { icon: MessageSquare, title: 'Support Ticket', desc: 'Submit a detailed request for our team.', action: 'Open Form', onClick: () => setShowTicketForm(true) },
+            { icon: LifeBuoy, title: 'FAQ Hub', desc: 'Instant answers to common questions.', action: 'Browse FAQs', onClick: () => {} },
+            { icon: FileText, title: 'Travel Guides', desc: 'Cultural etiquette and travel laws.', action: 'Read More', onClick: () => {} },
+            { icon: ShieldCheck, title: 'Contact Us', desc: 'Reach our team directly for help.', action: 'Open Contact Form', onClick: () => setShowContactForm(true) },
+          ].map((item, i) => (
+            <div key={i} onClick={item.onClick} className="glass rounded-[2rem] p-8 border border-white/5 group hover:border-gold-500/20 transition-all cursor-pointer">
+              <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center mb-6 text-gold-500 group-hover:scale-110 group-hover:bg-gold-500/10 transition-all">
+                <item.icon size={24} />
+              </div>
+              <h4 className="text-white font-bold mb-2">{item.title}</h4>
+              <p className="text-[11px] text-white/40 leading-relaxed mb-6 italic">"{item.desc}"</p>
+              <button className="text-[10px] font-black text-white/30 uppercase tracking-widest group-hover:text-gold-500 transition-colors uppercase">{item.action}</button>
             </div>
-            <h4 className="text-white font-bold mb-2">{item.title}</h4>
-            <p className="text-[11px] text-white/40 leading-relaxed mb-6 italic">"{item.desc}"</p>
-            <button className="text-[10px] font-black text-white/30 uppercase tracking-widest group-hover:text-gold-500 transition-colors uppercase">{item.action}</button>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
 
-      <div className="glass rounded-[2.5rem] p-10 border border-white/5 text-center max-w-2xl mx-auto">
-         <LifeBuoy size={40} className="mx-auto text-gold-500/50 mb-6" />
-         <h3 className="text-xl font-display font-bold text-white mb-4">Have a specific question?</h3>
-         <p className="text-white/40 text-sm mb-10 leading-relaxed italic">"Our mission is to ensure your Rwandan experience is seamless, safe, and soulful. Don't hesitate to reach out for any clarity."</p>
-         <button className="bg-gold-500 text-forest-900 px-10 py-4 rounded-3xl font-black text-sm uppercase tracking-widest shadow-2xl shadow-gold-500/20 hover:scale-105 transition-all">Open Support Ticket</button>
+        <div className="glass rounded-[2.5rem] p-10 border border-white/5 text-center max-w-2xl mx-auto">
+           <LifeBuoy size={40} className="mx-auto text-gold-500/50 mb-6" />
+           <h3 className="text-xl font-display font-bold text-white mb-4">Have a specific question?</h3>
+           <p className="text-white/40 text-sm mb-10 leading-relaxed italic">"Our mission is to ensure your Rwandan experience is seamless, safe, and soulful. Don't hesitate to reach out for any clarity."</p>
+           <button 
+            onClick={() => setShowTicketForm(true)}
+            className="bg-gold-500 text-forest-900 px-10 py-4 rounded-3xl font-black text-sm uppercase tracking-widest shadow-2xl shadow-gold-500/20 hover:scale-105 transition-all"
+           >
+             Open Support Ticket
+           </button>
+        </div>
+      </>
+    );
+
+    const renderContactFormView = () => (
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="max-w-3xl mx-auto"
+      >
+        {contactFormStatus === 'success' ? (
+          <div className="glass rounded-[3rem] p-12 border border-white/5 text-center py-24">
+            <div className="w-20 h-20 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto mb-8">
+              <Check className="text-emerald-500" size={40} />
+            </div>
+            <h3 className="text-2xl font-display font-bold text-white mb-4">Message Sent</h3>
+            <p className="text-white/40 text-sm italic">"Thank you for reaching out. We've received your message and will respond shortly via email."</p>
+          </div>
+        ) : (
+          <div className="glass rounded-[3rem] p-10 border border-white/5">
+            <form onSubmit={handleContactSubmit} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-[10px] font-black text-white/30 uppercase tracking-[0.3em] mb-3 ml-1">Full Name</label>
+                  <input 
+                    name="name"
+                    required
+                    placeholder="Enter your name"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:outline-none focus:border-gold-500/50 transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-white/30 uppercase tracking-[0.3em] mb-3 ml-1">Email Address</label>
+                  <input 
+                    name="email"
+                    type="email"
+                    required
+                    placeholder="you@example.com"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:outline-none focus:border-gold-500/50 transition-all"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black text-white/30 uppercase tracking-[0.3em] mb-3 ml-1">Subject</label>
+                <input 
+                  name="subject"
+                  required
+                  placeholder="What is this regarding?"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:outline-none focus:border-gold-500/50 transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black text-white/30 uppercase tracking-[0.3em] mb-3 ml-1">Message</label>
+                <textarea 
+                  name="message"
+                  required
+                  rows={5}
+                  placeholder="How can we help you today?"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:outline-none focus:border-gold-500/50 transition-all resize-none"
+                />
+              </div>
+
+              <div className="pt-6 flex gap-4">
+                <button 
+                  type="submit"
+                  disabled={contactFormStatus === 'submitting'}
+                  className="flex-1 bg-gold-500 text-forest-900 py-5 rounded-[2rem] font-black text-sm uppercase tracking-widest shadow-2xl shadow-gold-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center gap-3"
+                >
+                  {contactFormStatus === 'submitting' ? (
+                    <>
+                      <Loader2 className="animate-spin" size={20} />
+                      Sending...
+                    </>
+                  ) : (
+                    'Send Message'
+                  )}
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setShowContactForm(false)}
+                  className="px-10 py-5 bg-white/5 border border-white/10 text-white/40 font-black text-sm uppercase tracking-widest rounded-[2rem] hover:bg-white/10 hover:text-white transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+      </motion.div>
+    );
+
+    return (
+      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="flex justify-between items-center px-2">
+          <h2 className="text-2xl font-display font-bold text-white">
+            {showTicketForm ? 'Submit Support Ticket' : showContactForm ? 'Contact Support' : 'Help & Assistance'}
+          </h2>
+          {(showTicketForm || showContactForm) ? (
+            <button 
+              onClick={() => { setShowTicketForm(false); setShowContactForm(false); }}
+              className="text-xs font-bold text-white/40 hover:text-white transition-colors"
+            >
+              Go Back
+            </button>
+          ) : (
+            <span className="px-4 py-1.5 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-full text-[10px] font-black uppercase tracking-[0.2em]">Support Live</span>
+          )}
+        </div>
+
+        {showTicketForm ? (
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="max-w-3xl mx-auto"
+          >
+            {ticketFormStatus === 'success' ? (
+              <div className="glass rounded-[3rem] p-12 border border-white/5 text-center py-24">
+                <div className="w-20 h-20 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto mb-8">
+                  <Check className="text-emerald-500" size={40} />
+                </div>
+                <h3 className="text-2xl font-display font-bold text-white mb-4">Ticket Submitted</h3>
+                <p className="text-white/40 text-sm">Your request (Ref: #SR-{Math.floor(Math.random() * 9000) + 1000}) has been received. A travel ranger will contact you shortly.</p>
+              </div>
+            ) : (
+              <div className="glass rounded-[3rem] p-10 border border-white/5">
+                <form onSubmit={handleTicketSubmit} className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-[10px] font-black text-white/30 uppercase tracking-[0.3em] mb-3 ml-1">Subject</label>
+                      <input 
+                        name="subject"
+                        required
+                        placeholder="Brief title of the issue"
+                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:outline-none focus:border-gold-500/50 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-white/30 uppercase tracking-[0.3em] mb-3 ml-1">Priority</label>
+                      <select 
+                        name="priority"
+                        required
+                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:outline-none focus:border-gold-500/50 transition-all appearance-none"
+                      >
+                        <option value="Low" className="bg-forest-900">Low - Observation</option>
+                        <option value="Medium" className="bg-forest-900" selected>Medium - Assistance Needed</option>
+                        <option value="High" className="bg-forest-900">High - Urgent Issue</option>
+                        <option value="Critical" className="bg-forest-900">Critical - Emergency</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black text-white/30 uppercase tracking-[0.3em] mb-3 ml-1">Description</label>
+                    <textarea 
+                      name="description"
+                      required
+                      rows={5}
+                      placeholder="Provide details about your inquiry..."
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:outline-none focus:border-gold-500/50 transition-all resize-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black text-white/30 uppercase tracking-[0.3em] mb-3 ml-1">Attachments</label>
+                    <div 
+                      onDragEnter={handleDrag}
+                      onDragLeave={handleDrag}
+                      onDragOver={handleDrag}
+                      onDrop={handleDrop}
+                      className={`relative border-2 border-dashed rounded-[2rem] p-10 transition-all flex flex-col items-center justify-center text-center ${
+                        dragActive ? 'border-gold-500 bg-gold-500/5' : 'border-white/5 bg-white/[0.02] hover:bg-white/5'
+                      }`}
+                    >
+                      <Upload className={`mb-4 transition-colors ${dragActive ? 'text-gold-500' : 'text-white/20'}`} size={32} />
+                      <p className="text-xs text-white/40 mb-1">Drag and drop files here, or <label className="text-gold-500 cursor-pointer hover:underline"><input type="file" className="hidden" multiple onChange={handleFileChange} />click to browse</label></p>
+                      <p className="text-[10px] text-white/20 uppercase font-black tracking-widest">Max file size: 10MB</p>
+                    </div>
+
+                    {attachedFiles.length > 0 && (
+                      <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        {attachedFiles.map((file, idx) => (
+                          <div key={idx} className="bg-white/5 border border-white/5 p-3 rounded-xl flex items-center justify-between group">
+                            <div className="flex items-center gap-2 overflow-hidden">
+                              <Paperclip size={14} className="text-gold-500 shrink-0" />
+                              <span className="text-[10px] text-white/60 truncate font-bold">{file.name}</span>
+                            </div>
+                            <button 
+                              type="button"
+                              onClick={() => removeFile(idx)}
+                              className="p-1 text-white/20 hover:text-red-400 transition-colors"
+                            >
+                              <XCircle size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-6 flex gap-4">
+                    <button 
+                      type="submit"
+                      disabled={ticketFormStatus === 'submitting'}
+                      className="flex-1 bg-gold-500 text-forest-900 py-5 rounded-[2rem] font-black text-sm uppercase tracking-widest shadow-2xl shadow-gold-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center gap-3"
+                    >
+                      {ticketFormStatus === 'submitting' ? (
+                        <>
+                          <Loader2 className="animate-spin" size={20} />
+                          Processing...
+                        </>
+                      ) : (
+                        'Transmit Ticket'
+                      )}
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => setShowTicketForm(false)}
+                      className="px-10 py-5 bg-white/5 border border-white/10 text-white/40 font-black text-sm uppercase tracking-widest rounded-[2rem] hover:bg-white/10 hover:text-white transition-all"
+                    >
+                      Discard
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+          </motion.div>
+        ) : showContactForm ? (
+          renderContactFormView()
+        ) : (
+          renderCardContainer()
+        )}
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderPreferences = () => (
-    <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <form onSubmit={handleUpdateProfileSubmit} className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
         <div className="space-y-8">
            <div>
             <h3 className="text-xl font-display font-bold text-white mb-2">Account Profile</h3>
-            <p className="text-xs text-white/30">Update your traveler details and bio.</p>
+            <p className="text-xs text-white/30">Update your traveler details, credentials, and bio.</p>
           </div>
           
           <div className="space-y-6">
-            <div className="flex items-center gap-6 p-6 bg-white/[0.02] rounded-[2rem] border border-white/5">
-              <div className="w-20 h-20 rounded-[1.5rem] bg-gold-400/10 flex items-center justify-center text-gold-400 font-bold border-2 border-dashed border-gold-400/20">
-                {user.avatar ? <img src={user.avatar} className="w-full h-full object-cover rounded-[1.2rem]" /> : user.name[0]}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 p-6 bg-white/[0.02] rounded-[2rem] border border-white/5">
+              <div className="w-20 h-20 rounded-[1.5rem] bg-gold-400/10 flex items-center justify-center text-gold-400 font-bold border-2 border-dashed border-gold-400/20 shrink-0 overflow-hidden">
+                {profileAvatar ? <img src={profileAvatar} className="w-full h-full object-cover" /> : <span className="text-2xl">{profileName ? profileName[0].toUpperCase() : 'U'}</span>}
               </div>
-              <div>
-                <p className="text-xs font-bold text-white mb-1">Traveler Avatar</p>
-                <p className="text-[10px] text-white/20 uppercase tracking-widest">Change photo</p>
+              <div className="flex-1 space-y-2">
+                <p className="text-xs font-bold text-white">Select Traveler Avatar Profile Picture</p>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop',
+                    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop',
+                    'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop',
+                    'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop'
+                  ].map((url, i) => (
+                    <button 
+                      key={i} 
+                      type="button" 
+                      onClick={() => setProfileAvatar(url)}
+                      className={`w-10 h-10 rounded-xl overflow-hidden border-2 transition-all ${profileAvatar === url ? 'border-gold-500 scale-105' : 'border-transparent hover:border-white/20'}`}
+                    >
+                      <img src={url} className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                  <button 
+                    type="button"
+                    onClick={() => setProfileAvatar('')}
+                    className="px-2.5 h-10 rounded-xl bg-white/5 border border-white/10 text-[10px] font-bold text-white/60 hover:text-white"
+                  >
+                    Clear Photo
+                  </button>
+                </div>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
                <div>
                   <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2 ml-1">Display Name</label>
-                  <input type="text" defaultValue={user.name} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:outline-none focus:border-gold-500/50" />
+                  <input 
+                    type="text" 
+                    value={profileName} 
+                    onChange={(e) => setProfileName(e.target.value)} 
+                    required
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:outline-none focus:border-gold-500/50" 
+                  />
                </div>
                <div>
                   <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2 ml-1">Email Address</label>
-                  <input type="email" value="traveler@example.com" disabled className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-white/30" />
+                  <input 
+                    type="email" 
+                    value={profileEmail} 
+                    onChange={(e) => setProfileEmail(e.target.value)} 
+                    required
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:outline-none focus:border-gold-500/50" 
+                  />
+               </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+               <div>
+                  <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2 ml-1">Account Password</label>
+                  <input 
+                    type="password" 
+                    value={profilePassword} 
+                    onChange={(e) => setProfilePassword(e.target.value)} 
+                    required
+                    placeholder="••••••••"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:outline-none focus:border-gold-500/50 font-sans tracking-widest" 
+                  />
                </div>
             </div>
 
             <div>
                <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2 ml-1">Travel Bio</label>
-               <textarea rows={3} placeholder={user.bio || "Describe your travel style..."} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:outline-none focus:border-gold-500/50 resize-none" />
+               <textarea 
+                 rows={3} 
+                 value={profileBio} 
+                 onChange={(e) => setProfileBio(e.target.value)}
+                 className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:outline-none focus:border-gold-500/50 resize-none" 
+               />
             </div>
           </div>
         </div>
@@ -745,10 +1801,10 @@ export default function TouristDashboard({ activeTab, bookings, user }: Dashboar
 
           <div className="space-y-4">
              {[
-               { icon: Bell, title: 'Push Notifications', desc: 'Booking updates and chat alerts.', active: true },
+               { icon: Bell, title: 'Push Notifications', desc: 'Booking updates and chat alerts.', active: pushNotif, onClick: () => setPushNotif(!pushNotif) },
                { icon: Globe, title: 'Language Preferences', desc: 'App interface language.', value: 'English (US)' },
                { icon: Languages, title: 'Currency', desc: 'Display prices in your currency.', value: 'USD ($)' },
-               { icon: ShieldCheck, title: 'Privacy Mode', desc: 'Hide your profile from forums.', active: false },
+               { icon: ShieldCheck, title: 'Privacy Mode', desc: 'Hide your profile from forums.', active: privacyMode, onClick: () => setPrivacyMode(!privacyMode) },
              ].map((opt, i) => (
                 <div key={i} className="flex justify-between items-center p-6 glass rounded-3xl border border-white/5">
                    <div className="flex items-center gap-4">
@@ -759,7 +1815,11 @@ export default function TouristDashboard({ activeTab, bookings, user }: Dashboar
                       </div>
                    </div>
                    {opt.active !== undefined ? (
-                     <button className={`w-12 h-6 rounded-full relative transition-all ${opt.active ? 'bg-gold-500' : 'bg-white/10'}`}>
+                     <button 
+                       type="button" 
+                       onClick={opt.onClick} 
+                       className={`w-12 h-6 rounded-full relative transition-all ${opt.active ? 'bg-gold-500' : 'bg-white/10'}`}
+                     >
                         <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${opt.active ? 'left-7' : 'left-1'}`} />
                      </button>
                    ) : (
@@ -772,47 +1832,27 @@ export default function TouristDashboard({ activeTab, bookings, user }: Dashboar
       </div>
 
       <div className="flex pt-12 border-t border-white/5">
-        <button className="bg-gold-500 text-forest-900 px-12 py-5 rounded-3xl font-black text-sm uppercase tracking-widest hover:scale-105 transition-all shadow-2xl shadow-gold-500/20 active:scale-95">
+        <button type="submit" className="bg-gold-500 text-forest-900 px-12 py-5 rounded-3xl font-black text-sm uppercase tracking-widest hover:scale-105 transition-all shadow-2xl shadow-gold-500/20 active:scale-95">
           Secure Preferences
         </button>
       </div>
-    </div>
+    </form>
   );
 
-  if (activeTab === 'planner') {
-    return renderPlanner();
-  }
-
-  if (activeTab === 'trips') {
-    return renderTrips();
-  }
-
-  if (activeTab === 'bookings') {
-    return renderTickets();
-  }
-
-  if (activeTab === 'wishlist') {
-    return renderWishlist();
-  }
-
-  if (activeTab === 'reviews') {
-    return renderCommunity();
-  }
-
-  if (activeTab === 'payments') {
-    return renderPayments();
-  }
-
-  if (activeTab === 'support') {
-    return renderAssistance();
-  }
-
-  if (activeTab === 'settings') {
-    return renderPreferences();
-  }
-
-  if (activeTab === 'overview') {
-    return (
+  const getContent = () => {
+    switch (activeTab) {
+      case 'activities': return renderActivitiesAndGoals();
+      case 'planner': return renderPlanner();
+      case 'trips': return renderTrips();
+      case 'bookings': return renderTickets();
+      case 'wishlist': return renderWishlist();
+      case 'reviews': return renderCommunity();
+      case 'payments': return renderPayments();
+      case 'support': return renderAssistance();
+      case 'settings': return renderPreferences();
+      case 'overview':
+      default:
+        return (
       <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 relative min-h-[80vh] pt-4 px-4 md:px-0">
         {/* Elegant Background Slideshow */}
         <div className="absolute inset-0 -top-12 -mx-10 rounded-[5rem] overflow-hidden -z-10 pointer-events-none">
@@ -879,6 +1919,72 @@ export default function TouristDashboard({ activeTab, bookings, user }: Dashboar
           </div>
         </div>
 
+        {/* Interactive Booking Advisory & Real-time Reminders Timeline */}
+        <div className="glass rounded-[2.5rem] p-8 border border-white/5 relative overflow-hidden bg-radial-at-b from-amber-500/5 to-transparent">
+          <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
+            <Clock size={120} />
+          </div>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+            <div>
+              <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest flex items-center gap-1.5 mb-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" /> Real-Time Smart Reminders
+              </span>
+              <h3 className="text-xl font-display font-bold text-white">Your Upcoming Trip Advisory</h3>
+            </div>
+            <span className="text-[9px] font-bold text-white/30 uppercase tracking-wider font-mono bg-white/5 px-3 py-1.5 rounded-xl">3 ACTIVE TIMELINE ALERTS</span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {[
+              {
+                id: 'TREK-1',
+                title: '🦍 Volcanoes National Park (Bisoke Trek)',
+                status: 'Gear Check Overdue',
+                time: 'Tomorrow, August 25 - 06:30 AM',
+                alert: 'High rain predicted. Ensure double layer gaiters, waterproof boots, and long trousers are secure.',
+                priority: 'Critical'
+              },
+              {
+                id: 'STAY-2',
+                title: '🏨 One&Only Nyungwe House Stay',
+                status: 'Automated Shuttle Assigned',
+                time: 'August 27 at 02:00 PM Check-In',
+                alert: 'Driver Jean-Claude leaving Kigali city square at 07:30 AM sharp. Please be in primary lobby.',
+                priority: 'High'
+              },
+              {
+                id: 'TOUR-3',
+                title: '🛶 Lake Kivu Boat Expedition',
+                status: 'Payment Escrow Balanced',
+                time: 'September 1 at 10:00 AM',
+                alert: 'Acoustic life vest and digital authorization tickets have been synced. Secondary crew ready.',
+                priority: 'Optimal'
+              }
+            ].map((adv, idx) => (
+              <div key={idx} className="p-5 bg-white/[0.02] border border-white/5 rounded-[2rem] hover:border-white/10 transition-colors flex flex-col justify-between">
+                <div>
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="text-[9px] font-mono text-white/40 tracking-wider">ID: {adv.id}</span>
+                    <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${
+                      adv.priority === 'Critical' ? 'bg-red-500/10 text-red-400 animate-pulse' :
+                      adv.priority === 'High' ? 'bg-amber-500/10 text-amber-400' :
+                      'bg-emerald-500/10 text-emerald-400'
+                    }`}>
+                      {adv.status}
+                    </span>
+                  </div>
+                  <h4 className="text-xs font-black text-white mb-2 leading-relaxed">{adv.title}</h4>
+                  <p className="text-[11px] text-white/50 leading-relaxed italic mb-4">"{adv.alert}"</p>
+                </div>
+                <div className="flex items-center gap-1.5 pt-3 border-t border-white/5 text-[9px] text-white/30 font-black">
+                  <Calendar size={10} className="text-gold-400" />
+                  <span>{adv.time}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Quick Stats & Readiness */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           <div className="lg:col-span-3 grid grid-cols-2 md:grid-cols-4 gap-6">
@@ -924,8 +2030,13 @@ export default function TouristDashboard({ activeTab, bookings, user }: Dashboar
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <div className="space-y-6">
             <div className="flex justify-between items-center px-2">
-              <h3 className="font-display text-xl font-bold text-white">Active Bookings</h3>
-              <button className="text-[10px] font-black text-gold-500 uppercase tracking-widest">View All</button>
+              <h3 className="font-display text-xl font-bold text-white">My Bookings</h3>
+              <button 
+                onClick={() => onTabChange?.('bookings')}
+                className="text-[10px] font-black text-gold-500 uppercase tracking-widest hover:text-gold-400 transition-colors"
+              >
+                Manage All Bookings
+              </button>
             </div>
             <div className="space-y-4">
               {bookings.length > 0 ? bookings.slice(0, 3).map((booking, idx) => (
@@ -952,7 +2063,12 @@ export default function TouristDashboard({ activeTab, bookings, user }: Dashboar
           <div className="space-y-6">
             <div className="flex justify-between items-center px-2">
               <h3 className="font-display text-xl font-bold text-white">Saved Destinations</h3>
-              <button className="text-[10px] font-black text-gold-500 uppercase tracking-widest text-[#D4AF37]">Manage</button>
+              <button 
+                onClick={() => onTabChange?.('wishlist')}
+                className="text-[10px] font-black text-gold-500 uppercase tracking-widest text-[#D4AF37]"
+              >
+                Manage
+              </button>
             </div>
             <div className="grid grid-cols-2 gap-4">
               {[
@@ -971,22 +2087,20 @@ export default function TouristDashboard({ activeTab, bookings, user }: Dashboar
           </div>
         </div>
       </div>
-    );
-  }
+      );
+    }
+  };
 
   return (
-    <div className="relative">
+    <div className="relative min-h-screen">
+      {getContent()}
+      
       <AnimatePresence>
         {isAddingTrip && renderTripModal(null, true)}
         {editingTrip && renderTripModal(editingTrip)}
         {editingBooking && renderBookingModal(editingBooking)}
+        {selectedQRBooking && renderQRModal(selectedQRBooking)}
       </AnimatePresence>
-
-      <div className="flex flex-col items-center justify-center h-[60vh] text-center opacity-50">
-        <Compass size={48} className="text-gold-500 mb-6 animate-spin-slow" />
-        <h3 className="text-xl font-bold text-white mb-2">{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Coming Soon</h3>
-        <p className="text-sm text-white/40 italic">"Our rangers are mapping this section for your convenience."</p>
-      </div>
     </div>
   );
 }

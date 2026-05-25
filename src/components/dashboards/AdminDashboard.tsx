@@ -30,13 +30,32 @@ import {
 import { DashboardProps, UserRole, User, Destination, Hotel as HotelType, Booking } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
 import CommunicationCenter from './CommunicationCenter';
+import AdminAnalytics from './AdminAnalytics';
 import { dbService } from '../../services/db';
 
-export default function AdminDashboard({ activeTab, bookings: initialBookings, user }: DashboardProps) {
+import { MASTER_EMAIL } from '../../constants';
+
+export default function AdminDashboard({ activeTab, bookings: initialBookings, user, onTabChange }: DashboardProps) {
+  const isMaster = user.email.toLowerCase() === MASTER_EMAIL.toLowerCase();
+  const isAdminRole = user.role === UserRole.ADMIN;
+
+  if (!isMaster && !isAdminRole) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-8 glass rounded-[3rem] border border-red-500/20">
+        <Lock size={48} className="text-red-500 mb-6" />
+        <h2 className="text-2xl font-display font-bold text-white mb-4">Access Denied</h2>
+        <p className="text-white/40 max-w-sm italic">
+          "The Admin Command Center is strictly reserved for clearinghouse personnel. Your attempt has been logged for security audit."
+        </p>
+      </div>
+    );
+  }
+
   const [searchQuery, setSearchQuery] = useState('');
   const [dbState, setDbState] = useState(dbService.get());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<{ type: string, data: any } | null>(null);
+  const [verifyingEmails, setVerifyingEmails] = useState<string[]>([]);
   
   const isAdmin = user.role === UserRole.ADMIN;
   const [currentImage, setCurrentImage] = useState(0);
@@ -47,15 +66,67 @@ export default function AdminDashboard({ activeTab, bookings: initialBookings, u
     return () => window.removeEventListener('db-update', handleUpdate);
   }, []);
 
+  const notify = (msg: string) => {
+    window.dispatchEvent(new CustomEvent('app-toast', { detail: msg }));
+  };
+
+  const toggleUserStatus = (userId: string) => {
+    const user = dbState.users.find(u => u.id === userId);
+    if (!user) return;
+    
+    dbService.updateUser(userId, { isActive: !user.isActive });
+    notify(`User account ${!user.isActive ? 'activated' : 'deactivated'} successfully`);
+  };
+
+  const toggleUserVerification = (userId: string) => {
+    const u = dbState.users.find(userItem => userItem.id === userId);
+    if (!u) return;
+
+    dbService.updateUser(userId, { emailVerified: !u.emailVerified });
+    notify(`User verification status for ${u.name} updated successfully`);
+  };
+
+  const handleUserRoleChange = (userId: string, newRole: UserRole) => {
+    const targetUser = dbState.users.find(u => u.id === userId);
+    if (!targetUser) return;
+
+    if (targetUser.email.toLowerCase() === MASTER_EMAIL.toLowerCase()) {
+      notify("Emergency Protection: The Master Admin role cannot be modified.");
+      return;
+    }
+
+    dbService.updateUser(userId, { role: newRole });
+    notify(`User role for ${targetUser.name} changed to ${newRole.toUpperCase()}`);
+  };
+
+  const handleResendVerification = async (email: string) => {
+    if (verifyingEmails.includes(email)) return;
+    
+    setVerifyingEmails(prev => [...prev, email]);
+    try {
+      const response: any = await dbService.resendVerification(email);
+      notify(response.msg);
+    } catch (error) {
+      notify("Failed to initiate verification sequence.");
+    } finally {
+      setVerifyingEmails(prev => prev.filter(e => e !== email));
+    }
+  };
+
   const handleDelete = (type: string, id: any) => {
     if (!confirm(`Are you sure you want to delete this ${type}?`)) return;
     
-    switch (type) {
-      case 'user': dbService.deleteUser(id); break;
-      case 'destination': dbService.deleteDestination(id); break;
-      case 'hotel': dbService.deleteHotel(id); break;
-      case 'booking': dbService.deleteBooking(id); break;
-      case 'event': dbService.deleteEvent(id); break;
+    try {
+      switch (type) {
+        case 'user': dbService.deleteUser(id); break;
+        case 'destination': dbService.deleteDestination(id); break;
+        case 'hotel': dbService.deleteHotel(id); break;
+        case 'booking': dbService.deleteBooking(id); break;
+        case 'event': dbService.deleteEvent(id); break;
+      }
+      notify(`${type.charAt(0).toUpperCase() + type.slice(1)} removed successfully`);
+    } catch (error) {
+      notify(`Failed to delete ${type}`);
     }
   };
 
@@ -64,23 +135,38 @@ export default function AdminDashboard({ activeTab, bookings: initialBookings, u
     if (!editingItem) return;
 
     const { type, data } = editingItem;
-    if (data.id) {
-      // Update
-      switch (type) {
-        case 'user': dbService.updateUser(data.id, data); break;
-        case 'destination': dbService.updateDestination(data.id, data); break;
-        case 'hotel': dbService.updateHotel(data.id, data); break;
-        case 'event': dbService.updateEvent(data.id, data); break;
-        case 'booking': dbService.updateBooking(data.id, data); break;
+    try {
+      if (data.id) {
+        // Find old data to check for specific changes
+        const oldData = type === 'user' ? dbState.users.find(u => u.id === data.id) : null;
+        const isRoleChange = type === 'user' && oldData && oldData.role !== data.role;
+
+        // Update
+        switch (type) {
+          case 'user': dbService.updateUser(data.id, data); break;
+          case 'destination': dbService.updateDestination(data.id, data); break;
+          case 'hotel': dbService.updateHotel(data.id, data); break;
+          case 'event': dbService.updateEvent(data.id, data); break;
+          case 'booking': dbService.updateBooking(data.id, data); break;
+        }
+        
+        if (isRoleChange) {
+          notify(`User role successfully escalated to ${data.role.toUpperCase()}`);
+        } else {
+          notify(`${type.charAt(0).toUpperCase() + type.slice(1)} updated successfully`);
+        }
+      } else {
+        // Add
+        switch (type) {
+          case 'user': dbService.addUser(data); break;
+          case 'destination': dbService.addDestination(data); break;
+          case 'hotel': dbService.addHotel(data); break;
+          case 'event': dbService.addEvent(data); break;
+        }
+        notify(`${type.charAt(0).toUpperCase() + type.slice(1)} added successfully`);
       }
-    } else {
-      // Add
-      switch (type) {
-        case 'user': dbService.addUser(data); break;
-        case 'destination': dbService.addDestination(data); break;
-        case 'hotel': dbService.addHotel(data); break;
-        case 'event': dbService.addEvent(data); break;
-      }
+    } catch (error) {
+      notify(`Error saving ${type}`);
     }
     setIsModalOpen(false);
     setEditingItem(null);
@@ -93,10 +179,10 @@ export default function AdminDashboard({ activeTab, bookings: initialBookings, u
   ];
 
   const stats = [
-    { label: 'Total Users', value: dbState.users.length.toLocaleString(), trend: '+12%', icon: Users, color: 'text-blue-400' },
-    { label: 'Active Bookings', value: dbState.bookings.filter(b => b.status === 'confirmed').length.toString(), trend: '+5%', icon: Calendar, color: 'text-gold-400' },
-    { label: 'Total Revenue', value: `$${dbState.bookings.reduce((acc, b) => acc + b.price, 0).toLocaleString()}`, trend: '+18%', icon: DollarSign, color: 'text-green-400' },
-    { label: 'Destinations', value: dbState.destinations.length.toString(), trend: '0%', icon: MapPin, color: 'text-purple-400' },
+    { label: 'Total Users', value: dbState.users.length.toLocaleString(), trend: '+12%', icon: Users, color: 'text-blue-400', tab: 'users' },
+    { label: 'Active Bookings', value: dbState.bookings.filter(b => b.status === 'confirmed').length.toString(), trend: '+5%', icon: Calendar, color: 'text-gold-400', tab: 'bookings' },
+    { label: 'Total Revenue', value: `$${dbState.bookings.reduce((acc, b) => acc + b.price, 0).toLocaleString()}`, trend: '+18%', icon: DollarSign, color: 'text-green-400', tab: 'payments' },
+    { label: 'Destinations', value: dbState.destinations.length.toString(), trend: '0%', icon: MapPin, color: 'text-purple-400', tab: 'destinations' },
   ];
 
   const renderOverview = () => (
@@ -122,7 +208,11 @@ export default function AdminDashboard({ activeTab, bookings: initialBookings, u
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {stats.map((stat, idx) => (
-          <div key={idx} className="glass rounded-[2rem] p-6 border border-white/5 relative overflow-hidden group">
+          <button 
+            key={idx} 
+            onClick={() => onTabChange?.(stat.tab)}
+            className="glass rounded-[2rem] p-6 border border-white/5 relative overflow-hidden group text-left hover:border-gold-500/20 transition-all active:scale-95"
+          >
              <div className="flex justify-between items-start mb-4">
               <div className={`p-3 rounded-2xl bg-white/5 ${stat.color}`}>
                 <stat.icon size={20} />
@@ -133,7 +223,7 @@ export default function AdminDashboard({ activeTab, bookings: initialBookings, u
             </div>
             <p className="text-[10px] font-black text-white/20 uppercase tracking-widest mb-1">{stat.label}</p>
             <h3 className="text-2xl font-display font-bold text-white">{stat.value}</h3>
-          </div>
+          </button>
         ))}
       </div>
 
@@ -295,10 +385,67 @@ export default function AdminDashboard({ activeTab, bookings: initialBookings, u
               <tr key={i} className="hover:bg-white/[0.02] transition-colors">
                 {Object.entries(row).map(([key, val]: [string, any], j) => (
                   <td key={j} className="px-6 py-4">
-                    {key === 'status' || key === 'active' ? (
+                    {key === 'status' ? (
                       val ? <CheckCircle size={16} className="text-green-500" /> : <XCircle size={16} className="text-red-500" />
+                    ) : key === 'active' ? (
+                      <button 
+                        onClick={() => toggleUserStatus(row.id)}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all ${val ? 'bg-green-500/10 text-green-500 border-green-500/20 hover:bg-green-500/25' : 'bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/25'}`}
+                        title="Click to toggle user status"
+                      >
+                        {val ? <CheckCircle size={14} /> : <XCircle size={14} />}
+                        <span className="text-[9px] font-black uppercase tracking-widest">{val ? 'Active' : 'Inactive'}</span>
+                      </button>
                     ) : key === 'role' ? (
-                       <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${val === 'admin' ? 'bg-gold-500 text-forest-900' : 'bg-white/10 text-white/60'}`}>{val}</span>
+                      type === 'user' ? (
+                        row.email.toLowerCase() === MASTER_EMAIL.toLowerCase() ? (
+                          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gold-500/10 text-gold-500 border border-gold-500/20 rounded-xl text-[9px] font-black uppercase tracking-widest cursor-not-allowed w-fit" title="The Master Admin role cannot be modified.">
+                            <Lock size={12} className="text-gold-500" />
+                            <span>{val} (Master)</span>
+                          </div>
+                        ) : (
+                          <div className="relative inline-block w-36">
+                            <select 
+                              value={val}
+                              onChange={(e) => handleUserRoleChange(row.id, e.target.value as UserRole)}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-[10px] text-white font-black uppercase tracking-widest focus:outline-none focus:border-gold-500/50 appearance-none cursor-pointer hover:bg-white/[0.08] transition-all pr-8"
+                              title="Select user role"
+                            >
+                              {Object.values(UserRole).map(roleOption => (
+                                <option key={roleOption} value={roleOption} className="bg-forest-900 text-white font-normal text-xs">
+                                  {roleOption.toUpperCase()}
+                                </option>
+                              ))}
+                            </select>
+                            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-white/30">
+                              <ChevronDown size={12} />
+                            </div>
+                          </div>
+                        )
+                      ) : (
+                        <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${val === 'admin' ? 'bg-gold-500 text-forest-900' : 'bg-white/10 text-white/60'}`}>{val}</span>
+                      )
+                    ) : key === 'emailVerified' ? (
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => toggleUserVerification(row.id)}
+                          className={`flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-lg border transition-all ${val ? 'bg-green-500/10 text-green-500 border-green-500/20 hover:bg-green-500/25' : 'bg-red-400/10 text-red-400 border-red-400/20 hover:bg-red-400/25'}`}
+                          title="Click to toggle verification status"
+                        >
+                          {val ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                          <span>{val ? 'Verified' : 'Unverified'}</span>
+                        </button>
+                        
+                        {!val && (
+                          <button 
+                            onClick={() => handleResendVerification(row.email)}
+                            disabled={verifyingEmails.includes(row.email)}
+                            className={`px-2 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest border transition-all ${verifyingEmails.includes(row.email) ? 'bg-white/5 text-white/20 border-white/5 cursor-not-allowed' : 'bg-gold-500/10 text-gold-500 border-gold-500/20 hover:bg-gold-500 hover:text-forest-900'}`}
+                          >
+                            {verifyingEmails.includes(row.email) ? 'Sending...' : 'Verify'}
+                          </button>
+                        )}
+                      </div>
                     ) : (
                       <span className="text-sm font-bold text-white line-clamp-1">{val.toString()}</span>
                     )}
@@ -335,10 +482,10 @@ export default function AdminDashboard({ activeTab, bookings: initialBookings, u
 
   const getDefaults = (type: string) => {
     switch (type) {
-      case 'user': return { name: '', email: '', role: UserRole.TOURIST };
-      case 'destination': return { name: '', cat: 'parks', emoji: '⛰️', location: '', rating: 5, price: '$0', desc: '', best: '', fee: '' };
+      case 'user': return { name: '', email: '', role: UserRole.TOURIST, isActive: true };
+      case 'destination': return { name: '', cat: 'parks', emoji: '⛰️', location: '', rating: 5, price: '$0', desc: '', best: 'Dry Season', fee: '$0' };
       case 'hotel': return { name: '', cat: 'luxury', emoji: '🏨', location: '', price: 0, rating: 5, rooms: 0, amenities: [] };
-      case 'event': return { name: '', emoji: '🎉', location: '', price: '0', rating: 5, date: '' };
+      case 'event': return { name: '', emoji: '🎉', location: '', price: '0', rating: 5, date: new Date().toISOString().split('T')[0] };
       default: return {};
     }
   };
@@ -386,10 +533,31 @@ export default function AdminDashboard({ activeTab, bookings: initialBookings, u
   const getContent = () => {
     switch (activeTab) {
       case 'overview': return renderOverview();
+      case 'analytics': return (
+        <AdminAnalytics 
+          bookings={dbState.bookings} 
+          users={dbState.users} 
+          onUpdateStatus={(id, newStatus) => {
+            dbService.updateBooking(id, { status: newStatus as any });
+            notify(`Booking status updated to ${newStatus.toUpperCase()} successfully.`);
+          }}
+          onDeleteBooking={(id) => {
+            dbService.deleteBooking(id);
+            notify(`Booking deleted successfully.`);
+          }}
+        />
+      );
       case 'users': return (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
           {renderHeader('User Management', <Users size={24} />, 'user', dbState.users.length.toString())}
-          {renderTable(['ID', 'Email', 'Name', 'Role'], dbState.users.map(u => ({ id: u.id, email: u.email, name: u.name, role: u.role })), 'user')}
+          {renderTable(['ID', 'Email', 'Name', 'Role', 'Verification', 'Status'], dbState.users.map(u => ({ 
+            id: u.id, 
+            email: u.email, 
+            name: u.name, 
+            role: u.role,
+            emailVerified: u.emailVerified,
+            active: u.isActive
+          })), 'user')}
         </div>
       );
       case 'bookings': 
@@ -624,6 +792,54 @@ export default function AdminDashboard({ activeTab, bookings: initialBookings, u
                       >
                         {Object.values(UserRole).map(role => <option key={role} value={role}>{role.toUpperCase()}</option>)}
                       </select>
+                    ) : key === 'cat' && editingItem.type === 'destination' ? (
+                      <select 
+                        value={editingItem.data[key]}
+                        onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, [key]: e.target.value } })}
+                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:outline-none focus:border-gold-500/50 appearance-none"
+                      >
+                        {['parks', 'lakes', 'culture', 'adventure', 'hidden'].map(c => <option key={c} value={c}>{c.toUpperCase()}</option>)}
+                      </select>
+                    ) : key === 'cat' && editingItem.type === 'hotel' ? (
+                      <select 
+                        value={editingItem.data[key]}
+                        onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, [key]: e.target.value } })}
+                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:outline-none focus:border-gold-500/50 appearance-none"
+                      >
+                        {['luxury', 'eco', 'budget'].map(c => <option key={c} value={c}>{c.toUpperCase()}</option>)}
+                      </select>
+                    ) : key === 'amenities' ? (
+                      <div className="flex flex-wrap gap-2 p-2 bg-white/5 rounded-2xl border border-white/5 min-h-[3rem]">
+                        {(editingItem.data[key] as string[]).map((tag, i) => (
+                           <span key={i} className="bg-gold-500/10 text-gold-500 px-3 py-1 rounded-full text-[10px] font-black uppercase flex items-center gap-1">
+                             {tag}
+                             <X 
+                               size={10} 
+                               className="cursor-pointer hover:text-white" 
+                               onClick={() => {
+                                 const newList = [...(editingItem.data[key] as string[])];
+                                 newList.splice(i, 1);
+                                 setEditingItem({ ...editingItem, data: { ...editingItem.data, [key]: newList } });
+                               }}
+                             />
+                           </span>
+                        ))}
+                        <input 
+                          type="text"
+                          placeholder="Add amenity..."
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const val = e.currentTarget.value.trim();
+                              if (val) {
+                                setEditingItem({ ...editingItem, data: { ...editingItem.data, [key]: [...(editingItem.data[key] as string[]), val] } });
+                                e.currentTarget.value = '';
+                              }
+                            }
+                          }}
+                          className="flex-1 bg-transparent border-none text-[10px] font-medium text-white/50 focus:outline-none px-2"
+                        />
+                      </div>
                     ) : typeof editingItem.data[key] === 'boolean' ? (
                       <div className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl border border-white/5">
                         <button 
@@ -633,8 +849,15 @@ export default function AdminDashboard({ activeTab, bookings: initialBookings, u
                         >
                           <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${editingItem.data[key] ? 'translate-x-6' : 'translate-x-0'}`} />
                         </button>
-                        <span className="text-sm font-bold text-white/60">{editingItem.data[key] ? 'Active' : 'Inactive'}</span>
+                        <span className="text-sm font-bold text-white/60">{editingItem.data[key] ? 'Active/True' : 'Inactive/False'}</span>
                       </div>
+                    ) : typeof editingItem.data[key] === 'number' ? (
+                      <input 
+                        type="number"
+                        value={editingItem.data[key]}
+                        onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, [key]: parseFloat(e.target.value) || 0 } })}
+                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:outline-none focus:border-gold-500/50"
+                      />
                     ) : (
                       <input 
                         type="text"

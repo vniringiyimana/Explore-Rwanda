@@ -16,11 +16,62 @@ interface DbState {
 
 const initialState: DbState = {
   users: [
-    { id: '1', email: 'admin@rwandahub.com', name: 'System Admin', role: UserRole.ADMIN },
-    { id: '2', email: 'tourist@gmail.com', name: 'John Doe', role: UserRole.TOURIST },
-    { id: '3', email: 'moderator@rwandahub.com', name: 'Alice Smith', role: UserRole.MODERATOR },
+    { id: '1', email: 'vedasteniringiyimana12@gmail.com', name: 'Master Admin', role: UserRole.ADMIN, password: 'password123', emailVerified: true, isActive: true },
+    { id: '2', email: 'tourist@gmail.com', name: 'John Doe', role: UserRole.TOURIST, password: 'password123', emailVerified: false, isActive: true },
+    { id: '3', email: 'moderator@rwandahub.com', name: 'Alice Smith', role: UserRole.MODERATOR, password: 'password123', emailVerified: true, isActive: true },
+    { id: '4', email: 'partner@kigalihotels.rw', name: 'Emmanuel R.', role: UserRole.OPERATOR, businessName: 'Kigali Heights', password: 'password123', emailVerified: true, isActive: true },
+    { id: '5', email: 'editor@explore.rw', name: 'Clarisse U.', role: UserRole.EDITOR, password: 'password123', emailVerified: false, isActive: true },
+    { id: '6', email: 'serena@rwanda.com', name: 'Serena Booking Mgr', role: UserRole.OPERATOR, businessName: 'Kigali Serena', password: 'password123', emailVerified: true, isActive: true },
   ],
-  bookings: [],
+  bookings: [
+    {
+      id: 'mock-1',
+      itemId: 1,
+      itemType: 'destination',
+      itemName: 'Akagera National Park',
+      itemEmoji: '🦁',
+      email: 'tourist@gmail.com',
+      date: new Date(Date.now() + 86400000).toISOString().split('T')[0], // Tomorrow
+      status: 'confirmed',
+      partySize: '2 People',
+      price: 150,
+      paymentMethod: 'momo',
+      momoNumber: '0788123456',
+      notes: 'Please arrange for airport pickup if possible.',
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: 'mock-pend-1',
+      itemId: 3,
+      itemType: 'experience',
+      itemName: 'Kigali Cultural Tour',
+      itemEmoji: '🇷🇼',
+      email: 'alex.k@traveler.org',
+      date: new Date(Date.now() + 172800000).toISOString().split('T')[0], // Day after tomorrow
+      status: 'pending',
+      partySize: '4 People',
+      price: 340,
+      paymentMethod: 'momo',
+      momoNumber: '0789998887',
+      notes: 'Looking forward to visiting the Genocide Memorial and local art galleries.',
+      createdAt: new Date(Date.now() - 3600000).toISOString() // 1 hour ago
+    },
+    {
+      id: 'mock-pend-2',
+      itemId: 2,
+      itemType: 'hotel',
+      itemName: 'Lakeside Eco Lodge',
+      itemEmoji: '🏡',
+      email: 'elena.rodriguez@gmail.com',
+      date: new Date(Date.now() + 259200000).toISOString().split('T')[0], // In 3 days
+      status: 'pending',
+      partySize: '1 Person',
+      price: 220,
+      paymentMethod: 'Credit Card',
+      notes: 'Requesting a late check-in if possible, around 8 PM.',
+      createdAt: new Date(Date.now() - 7200000).toISOString() // 2 hours ago
+    }
+  ],
   destinations: DESTINATIONS,
   hotels: HOTELS,
   experiences: EXPERIENCES,
@@ -110,6 +161,18 @@ export const dbService = {
     dbService.save(state);
   },
 
+  addHotelReview: (hotelId: number, review: any) => {
+    const state = dbService.get();
+    state.hotels = state.hotels.map(h => {
+      if (h.id === hotelId) {
+        const reviews = h.reviews || [];
+        return { ...h, reviews: [...reviews, { ...review, id: `r-${Date.now()}` }] };
+      }
+      return h;
+    });
+    dbService.save(state);
+  },
+
   // Events
   addEvent: (event: any) => {
     const state = dbService.get();
@@ -160,6 +223,37 @@ export const dbService = {
     dbService.save(state);
     return newMessage;
   },
+  editMessage: (messageId: string, newContent: string) => {
+    const state = dbService.get();
+    state.messages = state.messages.map(m => m.id === messageId ? { ...m, content: newContent } : m);
+    dbService.save(state);
+  },
+  deleteMessage: (messageId: string) => {
+    const state = dbService.get();
+    state.messages = state.messages.filter(m => m.id !== messageId);
+    dbService.save(state);
+  },
+  deleteMessages: (messageIds: string[]) => {
+    const state = dbService.get();
+    state.messages = state.messages.filter(m => !messageIds.includes(m.id));
+    dbService.save(state);
+  },
+  bulkReply: (receiverIds: string[], content: string, senderId: string, senderName: string, type: 'direct' | 'support' = 'direct') => {
+    const state = dbService.get();
+    const newMessages: Message[] = receiverIds.map(receiverId => ({
+      id: Math.random().toString(36).substr(2, 9),
+      senderId,
+      senderName,
+      receiverId,
+      content,
+      type,
+      timestamp: new Date().toISOString(),
+      read: false
+    }));
+    state.messages.push(...newMessages);
+    dbService.save(state);
+    return newMessages;
+  },
   markRead: (messageId: string) => {
     const state = dbService.get();
     state.messages = state.messages.map(m => m.id === messageId ? { ...m, read: true } : m);
@@ -168,5 +262,15 @@ export const dbService = {
   getMessagesForUser: (userId: string) => {
     const state = dbService.get();
     return state.messages.filter(m => m.receiverId === userId || m.senderId === userId || m.receiverId === 'all');
+  },
+
+  resendVerification: async (email: string) => {
+    // Simulate backend call
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        console.log(`Verification email sent to: ${email}`);
+        resolve({ status: 'ok', msg: `A new verification link has been dispatched to ${email}.` });
+      }, 1500);
+    });
   }
 };

@@ -168,12 +168,13 @@ export default function AIPlanner() {
                     type="text"
                     value={input}
                     maxLength={MAX_CHARS}
+                    disabled={isLoading}
                     onChange={(e) => setInput(e.target.value)}
                     placeholder="Ask for an itinerary or travel advice..."
-                    className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-white placeholder-white/20 focus:outline-none focus:border-gold-400/50 transition-all font-medium pr-24"
+                    className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-white placeholder-white/20 focus:outline-none focus:border-gold-400/50 transition-all font-medium pr-24 disabled:opacity-50"
                   />
-                  <div className={`absolute right-24 top-1/2 -translate-y-1/2 text-[10px] font-black tracking-widest ${input.length >= MAX_CHARS ? 'text-red-400' : 'text-white/20'}`}>
-                    {input.length}/{MAX_CHARS}
+                  <div className={`absolute right-24 top-1/2 -translate-y-1/2 text-[10px] font-black tracking-widest ${input.length >= MAX_CHARS * 0.9 ? 'text-red-400' : 'text-white/20'}`}>
+                    {MAX_CHARS - input.length}
                   </div>
                   <button
                     type="submit"

@@ -23,6 +23,29 @@ export default function Destinations({ data, onSelect }: { data: Destination[], 
     setSelectedGallery({ dest, index: 0 });
   };
 
+  const nextImage = () => {
+    if (!selectedGallery) return;
+    const len = selectedGallery.dest.gallery?.length || 1;
+    setSelectedGallery(prev => prev ? { ...prev, index: (prev.index + 1) % len } : null);
+  };
+
+  const prevImage = () => {
+    if (!selectedGallery) return;
+    const len = selectedGallery.dest.gallery?.length || 1;
+    setSelectedGallery(prev => prev ? { ...prev, index: (prev.index - 1 + len) % len } : null);
+  };
+
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!selectedGallery) return;
+      if (e.key === 'ArrowRight') nextImage();
+      if (e.key === 'ArrowLeft') prevImage();
+      if (e.key === 'Escape') setSelectedGallery(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedGallery]);
+
   return (
     <section id="destinations" className="py-24 px-4 sm:px-6 lg:px-8 bg-forest-900 relative min-h-screen">
       <div className="absolute inset-0 opacity-[0.02] pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle, #c9a84c 1px, transparent 1px)', backgroundSize: '30px 30px' }} />
@@ -110,13 +133,25 @@ export default function Destinations({ data, onSelect }: { data: Destination[], 
                   <div className="absolute top-4 right-4 flex gap-2">
                     <button 
                       onClick={(e) => openGallery(e, dest)}
-                      className="w-10 h-10 glass rounded-xl flex items-center justify-center text-white hover:bg-gold-500 hover:text-forest-900 transition-all duration-300 border border-white/10"
+                      className="w-10 h-10 glass rounded-xl flex items-center justify-center text-white hover:bg-gold-500 hover:text-forest-900 transition-all duration-300 border border-white/10 relative group/btn"
                     >
                       <ImageIcon size={18} />
+                      <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap bg-forest-900 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-md opacity-0 group-hover/btn:opacity-100 transition-opacity border border-white/10">View Gallery</span>
                     </button>
                     <div className="px-3 py-1 glass rounded-xl text-[10px] font-bold text-gold-300 tracking-[0.2em] border border-white/10 uppercase flex items-center">
                       {dest.price}
                     </div>
+                  </div>
+
+                  {/* Hover Overlay */}
+                  <div 
+                    onClick={(e) => openGallery(e, dest)}
+                    className="absolute inset-0 bg-gold-900/40 opacity-0 group-hover/image:opacity-100 transition-opacity duration-500 flex flex-col items-center justify-center gap-4 cursor-zoom-in backdrop-blur-[2px]"
+                  >
+                    <div className="w-16 h-16 rounded-full bg-gold-500 flex items-center justify-center text-forest-900 scale-90 group-hover/image:scale-100 transition-transform duration-500 shadow-2xl shadow-gold-500/40">
+                      <ImageIcon size={24} />
+                    </div>
+                    <span className="text-[10px] font-black text-white uppercase tracking-[0.4em] drop-shadow-lg">Visual Archive</span>
                   </div>
 
                   {/* Rating Label on Image */}
@@ -168,9 +203,10 @@ export default function Destinations({ data, onSelect }: { data: Destination[], 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-forest-900/95 backdrop-blur-xl flex flex-col p-4 sm:p-10"
+            onClick={() => setSelectedGallery(null)}
+            className="fixed inset-0 z-[100] bg-forest-900/95 backdrop-blur-xl flex flex-col p-4 sm:p-10 cursor-zoom-out"
           >
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex justify-between items-center mb-6 z-20" onClick={(e) => e.stopPropagation()}>
               <div>
                 <h4 className="text-gold-400 font-display text-2xl font-black">{selectedGallery.dest.name}</h4>
                 <p className="text-[10px] text-white/40 uppercase tracking-[0.3em] font-black">Visual Exploration / Gallery</p>
@@ -186,14 +222,14 @@ export default function Destinations({ data, onSelect }: { data: Destination[], 
             <div className="flex-1 relative flex items-center justify-center group/lightbox">
               <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex justify-between z-10 px-4">
                 <button 
-                  onClick={() => setSelectedGallery(prev => prev ? { ...prev, index: (prev.index - 1 + (prev.dest.gallery?.length || 1)) % (prev.dest.gallery?.length || 1) } : null)}
-                  className="w-14 h-14 glass rounded-full flex items-center justify-center text-white hover:bg-gold-500 hover:text-forest-900 transition-all"
+                  onClick={(e) => { e.stopPropagation(); prevImage(); }}
+                  className="w-14 h-14 glass rounded-full flex items-center justify-center text-white hover:bg-gold-500 hover:text-forest-900 transition-all border border-white/10"
                 >
                   <ChevronLeft size={32} />
                 </button>
                 <button 
-                  onClick={() => setSelectedGallery(prev => prev ? { ...prev, index: (prev.index + 1) % (prev.dest.gallery?.length || 1) } : null)}
-                  className="w-14 h-14 glass rounded-full flex items-center justify-center text-white hover:bg-gold-500 hover:text-forest-900 transition-all"
+                  onClick={(e) => { e.stopPropagation(); nextImage(); }}
+                  className="w-14 h-14 glass rounded-full flex items-center justify-center text-white hover:bg-gold-500 hover:text-forest-900 transition-all border border-white/10"
                 >
                   <ChevronRight size={32} />
                 </button>
@@ -201,11 +237,11 @@ export default function Destinations({ data, onSelect }: { data: Destination[], 
 
               <motion.div 
                 key={selectedGallery.index}
-                initial={{ opacity: 0, scale: 0.9, rotateY: 45 }}
-                animate={{ opacity: 1, scale: 1, rotateY: 0 }}
-                exit={{ opacity: 0, scale: 0.9, rotateY: -45 }}
-                transition={{ type: "spring", damping: 12 }}
-                className="relative w-full max-w-5xl aspect-video rounded-[3rem] overflow-hidden shadow-2xl border border-white/10"
+                initial={{ opacity: 0, scale: 0.95, x: 50 }}
+                animate={{ opacity: 1, scale: 1, x: 0 }}
+                exit={{ opacity: 0, scale: 0.95, x: -50 }}
+                transition={{ type: "spring", damping: 25, stiffness: 150 }}
+                className="relative w-full max-w-5xl h-[70vh] rounded-[3rem] overflow-hidden shadow-2xl border border-white/10"
               >
                 <img 
                   src={selectedGallery.dest.gallery?.[selectedGallery.index]} 
@@ -228,7 +264,7 @@ export default function Destinations({ data, onSelect }: { data: Destination[], 
             </div>
 
             {/* Thumbnails */}
-            <div className="flex justify-center gap-3 mt-10 overflow-x-auto pb-4">
+            <div className="flex justify-center gap-3 mt-10 overflow-x-auto pb-4 z-20" onClick={(e) => e.stopPropagation()}>
               {selectedGallery.dest.gallery?.map((img, i) => (
                 <button 
                   key={i}

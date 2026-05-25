@@ -11,9 +11,12 @@ export interface User {
   email: string;
   name: string;
   role: UserRole;
+  password?: string;
   avatar?: string;
   businessName?: string;
   bio?: string;
+  emailVerified?: boolean;
+  isActive?: boolean;
 }
 
 export interface Booking {
@@ -30,6 +33,7 @@ export interface Booking {
   price: number;
   paymentMethod?: string;
   momoNumber?: string;
+  phone?: string;
   seat?: string;
   insurance?: {
     selected: boolean;
@@ -38,6 +42,7 @@ export interface Booking {
   };
   createdAt: string;
   notes?: string;
+  travelerName?: string;
 }
 
 export interface Translations {
@@ -73,6 +78,16 @@ export interface Experience {
   badgeColor: string;
 }
 
+export interface Review {
+  id: string;
+  userId: string;
+  userName: string;
+  userAvatar?: string;
+  rating: number;
+  comment: string;
+  date: string;
+}
+
 export interface Hotel {
   id: number;
   name: string;
@@ -83,6 +98,8 @@ export interface Hotel {
   rating: number;
   rooms: number;
   amenities: string[];
+  gallery?: string[];
+  reviews?: Review[];
 }
 
 export interface Phrase {
@@ -112,6 +129,11 @@ export interface Message {
   timestamp: string;
   read: boolean;
   type: 'direct' | 'broadcast' | 'support';
+  parentMessageId?: string;
+  replyToContent?: string;
+  hasAttachment?: boolean;
+  attachments?: string[];
+  receiverEmail?: string;
 }
 
 export interface Conversation {
@@ -127,4 +149,6 @@ export interface DashboardProps {
   activeTab: string;
   user: User;
   bookings: Booking[];
+  onTabChange?: (tab: string) => void;
+  voiceSearchQuery?: string | null;
 }

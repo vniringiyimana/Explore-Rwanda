@@ -1,9 +1,76 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Hotel as HotelType } from '../types';
-import { Hotel as HotelIcon, MapPin, Star, Building, Trees, Coffee, Wifi, Waves, Utensils, Sparkles, Filter } from 'lucide-react';
+import { Hotel as HotelIcon, MapPin, Star, Building, Trees, Coffee, Wifi, Waves, Utensils, Sparkles, Filter, ChevronLeft, ChevronRight, Zap } from 'lucide-react';
 
-export default function Hotels({ data, onBook }: { data: HotelType[], onBook: (id: number) => void }) {
+function HotelImageGallery({ images, name, category }: { images: string[], name: string, category: string }) {
+  const [index, setIndex] = useState(0);
+
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  const next = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsLoaded(false);
+    setIndex((index + 1) % images.length);
+  };
+
+  const prev = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsLoaded(false);
+    setIndex((index - 1 + images.length) % images.length);
+  };
+
+  if (!images.length) return (
+    <div className="h-48 bg-linear-to-br from-forest-700 to-forest-800 flex items-center justify-center relative">
+       <Sparkles size={48} className="text-white/10" />
+    </div>
+  );
+
+  return (
+    <div className="h-56 relative group/gallery overflow-hidden bg-forest-800/50">
+      <AnimatePresence mode="wait">
+        <motion.img
+          key={index}
+          src={images[index]}
+          alt={name}
+          initial={{ opacity: 0, scale: 1.1 }}
+          animate={{ opacity: isLoaded ? 1 : 0, scale: isLoaded ? 1 : 1.05 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          onLoad={() => setIsLoaded(true)}
+          transition={{ duration: 0.6 }}
+          className="w-full h-full object-cover"
+          referrerPolicy="no-referrer"
+          loading="lazy"
+        />
+      </AnimatePresence>
+      
+      <div className="absolute inset-0 bg-linear-to-t from-forest-900/60 to-transparent" />
+
+      <div className={`absolute top-4 left-4 px-3 py-1 glass rounded-lg text-[10px] font-bold uppercase tracking-widest border border-white/10 z-10 ${
+        category === 'luxury' ? 'text-gold-300' : category === 'eco' ? 'text-green-300' : 'text-blue-300'
+      }`}>
+        {category}
+      </div>
+
+      <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex justify-between px-2 opacity-0 group-hover/gallery:opacity-100 transition-opacity">
+        <button onClick={prev} className="w-8 h-8 glass rounded-full flex items-center justify-center text-white hover:bg-gold-500 hover:text-forest-900 transition-all">
+          <ChevronLeft size={16} />
+        </button>
+        <button onClick={next} className="w-8 h-8 glass rounded-full flex items-center justify-center text-white hover:bg-gold-500 hover:text-forest-900 transition-all">
+          <ChevronRight size={16} />
+        </button>
+      </div>
+
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
+        {images.map((_, i) => (
+          <div key={i} className={`w-1.5 h-1.5 rounded-full transition-all ${i === index ? 'bg-gold-500 w-4' : 'bg-white/20'}`} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function Hotels({ data, onBook, onViewDetails }: { data: HotelType[], onBook: (id: number) => void, onViewDetails: (id: number) => void }) {
   const [filter, setFilter] = useState<'all' | 'luxury' | 'eco' | 'budget'>('all');
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
 
@@ -131,23 +198,10 @@ export default function Hotels({ data, onBook }: { data: HotelType[], onBook: (i
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9 }}
                 whileHover={{ y: -8 }}
-                onClick={() => onBook(hotel.id)}
-                className="group cursor-pointer glass rounded-[2.5rem] overflow-hidden border border-white/5 hover:border-gold-500/30 transition-all duration-500"
+                onClick={() => onViewDetails(hotel.id)}
+                className="group cursor-pointer glass rounded-[2.5rem] overflow-hidden border border-white/5 hover:border-gold-500/30 transition-all duration-500 bg-white/[0.02]"
               >
-                <div className="h-48 bg-linear-to-br from-forest-700 to-forest-800 flex items-center justify-center relative">
-                  <motion.span 
-                     animate={{ y: [0, -4, 0] }}
-                     transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-                     className="text-6xl z-10 filter drop-shadow-2xl"
-                  >
-                    {hotel.emoji}
-                  </motion.span>
-                  <div className={`absolute top-4 left-4 px-3 py-1 glass rounded-lg text-[10px] font-bold uppercase tracking-widest border border-white/10 ${
-                    hotel.cat === 'luxury' ? 'text-gold-300' : hotel.cat === 'eco' ? 'text-green-300' : 'text-blue-300'
-                  }`}>
-                    {hotel.cat}
-                  </div>
-                </div>
+                <HotelImageGallery images={hotel.gallery || []} name={hotel.name} category={hotel.cat} />
 
                 <div className="p-6">
                   <h3 className="font-display font-bold text-xl mb-2 group-hover:text-gold-300 transition-colors">
@@ -167,11 +221,12 @@ export default function Hotels({ data, onBook }: { data: HotelType[], onBook: (i
                     ))}
                   </div>
                   
-                  <div className="pt-6 border-t border-white/5 flex flex-col gap-4">
+                  <div className="pt-6 border-t border-white/5 flex flex-col gap-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
                         <Star size={14} className="text-gold-400 fill-gold-400" />
                         <span className="text-sm font-bold text-white">{hotel.rating}</span>
+                        <span className="text-[10px] text-white/20 font-bold ml-1">({hotel.reviews?.length || 0})</span>
                       </div>
                       <div className="text-xl font-bold text-gold-300">
                         ${hotel.price}
@@ -179,15 +234,27 @@ export default function Hotels({ data, onBook }: { data: HotelType[], onBook: (i
                       </div>
                     </div>
                     
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onBook(hotel.id);
-                      }}
-                      className="w-full bg-gold-500 text-forest-900 py-3 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-gold-500/20 flex items-center justify-center gap-2 group-hover:bg-gold-400"
-                    >
-                      Book Now
-                    </button>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onViewDetails(hotel.id);
+                        }}
+                        className="flex-1 bg-white/5 hover:bg-white/10 text-white py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all border border-white/10 active:scale-95"
+                      >
+                        Details
+                      </button>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onBook(hotel.id);
+                        }}
+                        className="flex-[2] bg-gold-500 text-forest-900 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-gold-500/20 flex items-center justify-center gap-2 group-hover:bg-gold-400 group-hover:shadow-gold-500/40"
+                      >
+                        <Zap size={14} className="fill-current" />
+                        Book Now
+                      </button>
+                    </div>
                   </div>
                 </div>
               </motion.div>
