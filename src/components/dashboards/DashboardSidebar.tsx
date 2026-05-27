@@ -23,7 +23,7 @@ import {
   Check
 } from 'lucide-react';
 import { UserRole } from '../../types';
-import { MASTER_EMAIL } from '../../constants';
+import { MASTER_EMAIL, ALT_MASTER_EMAIL } from '../../constants';
 import { dbService } from '../../services/db';
 
 interface SidebarProps {
@@ -39,7 +39,7 @@ interface SidebarProps {
 }
 
 export default function DashboardSidebar({ role, userEmail, emailVerified, viewRole, onViewRoleChange, activeTab, setActiveTab, onLogout, userName }: SidebarProps) {
-  const isMaster = userEmail?.toLowerCase() === MASTER_EMAIL.toLowerCase();
+  const isMaster = userEmail?.toLowerCase() === MASTER_EMAIL.toLowerCase() || userEmail?.toLowerCase() === ALT_MASTER_EMAIL.toLowerCase();
   
   const [showSwitchProfiles, setShowSwitchProfiles] = React.useState(false);
   const registeredUsers = dbService.get()?.users || [];
@@ -101,7 +101,10 @@ export default function DashboardSidebar({ role, userEmail, emailVerified, viewR
     }
   };
 
-  const navItems = getNavItems();
+  const navItems = [
+    { id: 'tour', label: '🗺️ Visual Tour', icon: LayoutDashboard },
+    ...getNavItems()
+  ];
 
   return (
     <div className="w-64 bg-forest-950 border-r border-white/5 h-screen sticky top-0 flex flex-col p-6 overflow-y-auto custom-scrollbar">
@@ -115,22 +118,30 @@ export default function DashboardSidebar({ role, userEmail, emailVerified, viewR
         <p className="text-[10px] font-black text-gold-400 uppercase tracking-[0.15em] mb-3">Role Sandbox Switcher</p>
         <div className="space-y-1">
           {[
-            { id: UserRole.ADMIN, label: '🛡️ Admin Desk' },
-            { id: UserRole.OPERATOR, label: '💼 Partner Hub' },
-            { id: UserRole.TOURIST, label: '🌍 Tourist View' },
-            { id: UserRole.EDITOR, label: '✍️ Content Editor' },
-            { id: UserRole.MODERATOR, label: '⚖️ Support Moderator' },
+            { id: UserRole.ADMIN, label: '🛡️ Admin Desk', locked: !isMaster },
+            { id: UserRole.OPERATOR, label: '💼 Partner Hub', locked: !isMaster },
+            { id: UserRole.TOURIST, label: '🌍 Tourist View', locked: false },
+            { id: UserRole.EDITOR, label: '✍️ Content Editor', locked: !isMaster },
+            { id: UserRole.MODERATOR, label: '⚖️ Support Moderator', locked: !isMaster },
           ].map((v) => (
             <button
               key={v.id}
+              disabled={v.locked}
               onClick={() => onViewRoleChange(v.id)}
-              className={`w-full text-left px-3 py-2 rounded-xl text-[10px] font-bold transition-all ${
+              className={`w-full text-left px-3 py-2 rounded-xl text-[10px] font-bold transition-all flex items-center justify-between ${
                 viewRole === v.id 
                   ? 'bg-gold-500 text-forest-950 shadow-md shadow-gold-500/10' 
-                  : 'text-white/40 hover:text-white/80 hover:bg-white/5'
+                  : v.locked
+                    ? 'text-white/20 cursor-not-allowed opacity-50'
+                    : 'text-white/40 hover:text-white/80 hover:bg-white/5'
               }`}
             >
-              {v.label}
+              <span>{v.label}</span>
+              {v.locked && (
+                <span className="text-[7.5px] font-mono font-black text-red-400 bg-red-400/10 px-1 rounded-sm border border-red-400/20 tracking-wider">
+                  LOCKED
+                </span>
+              )}
             </button>
           ))}
         </div>

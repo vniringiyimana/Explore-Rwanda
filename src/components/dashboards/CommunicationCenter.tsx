@@ -28,7 +28,15 @@ import {
   RefreshCw,
   Lock,
   LockOpen,
-  MessageSquare
+  MessageSquare,
+  QrCode,
+  Scan,
+  Camera,
+  CameraOff,
+  CheckCircle2,
+  AlertTriangle,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { dbService } from '../../services/db';
 import { User as UserType, Message, UserRole } from '../../types';
@@ -94,6 +102,34 @@ export default function CommunicationCenter({ currentUser }: CommunicationCenter
   const [editUserBusiness, setEditUserBusiness] = useState('');
   const [editUserVerified, setEditUserVerified] = useState(false);
 
+  // QR Scan Overlay & Ticket Verification states
+  const [showQrScanOverlay, setShowQrScanOverlay] = useState(false);
+  const [batchVerifyEnabled, setBatchVerifyEnabled] = useState(false);
+  const [sessionScannedTickets, setSessionScannedTickets] = useState<any[]>([]);
+  const [scannedTicketSearch, setScannedTicketSearch] = useState('');
+  const [cameraStreaming, setCameraStreaming] = useState(false);
+  const [scanResult, setScanResult] = useState<any | null>(null);
+  const [isSimulatingScan, setIsSimulatingScan] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [showSuccessPulse, setShowSuccessPulse] = useState(false);
+  const [exitingLogId, setExitingLogId] = useState<string | null>(null);
+
+  // Verified ticket IDs tracked in localStorage for persistence
+  const [verifiedTicketIds, setVerifiedTicketIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('rwanda_verified_tickets');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const saveVerifiedTickets = (ids: string[]) => {
+    setVerifiedTicketIds(ids);
+    localStorage.setItem('rwanda_verified_tickets', JSON.stringify(ids));
+  };
+
   // Advanced Search parameters
   const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
   const [searchStartDate, setSearchStartDate] = useState('');
@@ -152,17 +188,23 @@ export default function CommunicationCenter({ currentUser }: CommunicationCenter
       return;
     }
 
+    const tokenCode = Math.floor(100000 + Math.random() * 900000).toString();
     const newUser = dbService.addUser({
       name: addUserName,
       email: addUserEmail,
       role: addUserRole,
       password: 'password123', // Default credential
       emailVerified: addUserVerified,
+      verificationToken: addUserVerified ? undefined : tokenCode,
       isActive: true,
       businessName: addUserRole === UserRole.OPERATOR ? addUserBusiness : undefined
     });
 
-    notify(`Created new operational profile for "${addUserName}" (${addUserVerified ? "Direct Sync Verified" : "Verification Token Routing Pending"})!`);
+    if (addUserVerified) {
+      notify(`Created new operational profile for "${addUserName}" (Direct Sync Verified successfully)!`);
+    } else {
+      notify(`📧 Created profile for "${addUserName}" with pending verification. Secure SMTP Token dispatched: [${tokenCode}] for role ${addUserRole.toUpperCase()}!`);
+    }
     
     // Clear form
     setAddUserName('');
@@ -289,6 +331,7 @@ export default function CommunicationCenter({ currentUser }: CommunicationCenter
     }
 
     setNewMessage('');
+    localStorage.removeItem(`draft_msg_${activeConversation || 'global'}_${view}`);
     setReplyingToMessage(null);
     setPendingAttachments([]);
     setShowAttachmentDropdown(false);
@@ -451,6 +494,224 @@ export default function CommunicationCenter({ currentUser }: CommunicationCenter
     setSelectedMessageIds(prev => prev.includes(msgId) ? prev.filter(i => i !== msgId) : [...prev, msgId]);
   };
 
+  // 💾 Draft Message Auto-Save Sync Engine
+  // Load draft on mount and when activeConversation or view changes
+  useEffect(() => {
+    const key = `draft_msg_${activeConversation || 'global'}_${view}`;
+    const saved = localStorage.getItem(key);
+    if (saved !== null) {
+      setNewMessage(saved);
+    } else {
+      setNewMessage('');
+    }
+  }, [activeConversation, view]);
+
+  // Handle draft state writing proxy
+  const handleNewMessageChange = (val: string) => {
+    setNewMessage(val);
+    const key = `draft_msg_${activeConversation || 'global'}_${view}`;
+    if (val) {
+      localStorage.setItem(key, val);
+    } else {
+      localStorage.removeItem(key);
+    }
+  };
+
+  // Sound effects generator client-side
+  const playBeep = (type: 'success' | 'warning' | 'error' = 'success') => {
+    if (!soundEnabled) return;
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      
+      if (type === 'success') {
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // High pleasing tone
+        gainNode.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        oscillator.start();
+        gainNode.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 0.12);
+        oscillator.stop(audioCtx.currentTime + 0.12);
+      } else if (type === 'warning') {
+        oscillator.type = 'triangle';
+        oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); // Mid tone
+        gainNode.gain.setValueAtTime(0.12, audioCtx.currentTime);
+        oscillator.start();
+        gainNode.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 0.25);
+        oscillator.stop(audioCtx.currentTime + 0.25);
+      } else { // error
+        oscillator.type = 'sawtooth';
+        oscillator.frequency.setValueAtTime(120, audioCtx.currentTime); // Buzz/low tone
+        gainNode.gain.setValueAtTime(0.18, audioCtx.currentTime);
+        oscillator.start();
+        gainNode.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 0.4);
+        oscillator.stop(audioCtx.currentTime + 0.4);
+      }
+    } catch (err) {
+      console.warn("Audio Context beep played silently due to user interaction policy", err);
+    }
+  };
+
+  // Camera stream helper ref
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const startCamera = async () => {
+      if (!showQrScanOverlay) return;
+      setCameraError(null);
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: 'environment' } 
+        });
+        if (active) {
+          cameraStreamRef.current = stream;
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            videoRef.current.play().catch(e => console.warn(e));
+          }
+          setCameraStreaming(true);
+        } else {
+          // Stop stream immediately if target is not active
+          stream.getTracks().forEach(track => track.stop());
+        }
+      } catch (err: any) {
+        if (active) {
+          console.warn("Camera resource could not be loaded or is blocked", err);
+          setCameraError(err.message || 'Verification camera blocked or unavailable');
+          setCameraStreaming(false);
+        }
+      }
+    };
+
+    if (showQrScanOverlay) {
+      startCamera();
+    } else {
+      if (cameraStreamRef.current) {
+        cameraStreamRef.current.getTracks().forEach(track => track.stop());
+        cameraStreamRef.current = null;
+      }
+      setCameraStreaming(false);
+    }
+
+    return () => {
+      active = false;
+      if (cameraStreamRef.current) {
+        cameraStreamRef.current.getTracks().forEach(track => track.stop());
+        cameraStreamRef.current = null;
+      }
+    };
+  }, [showQrScanOverlay]);
+
+  // Execute Ticket Code Verification directly against the database bookings
+  const handleVerifyTicketCode = (code: string) => {
+    const cleanCode = code.trim().toUpperCase();
+    if (!cleanCode) return;
+
+    const state = dbService.get();
+    // Case-insensitive matching with fallback for original ids
+    const foundBooking = state.bookings.find(b => 
+      b.id.toUpperCase() === cleanCode || 
+      b.id === code.trim()
+    );
+
+    if (!foundBooking) {
+      playBeep('error');
+      setScanResult({
+        success: false,
+        code: cleanCode,
+        reason: 'Invalid Ticket Token: Ticket code non-existent in active databases.'
+      });
+      notify(`❌ Failed: Code "${cleanCode}" non-existent.`);
+      return;
+    }
+
+    if (verifiedTicketIds.includes(foundBooking.id)) {
+      playBeep('warning');
+      setScanResult({
+        success: false,
+        code: cleanCode,
+        booking: foundBooking,
+        reason: 'Duplicate Token: This ticket was already verified for security clearance.'
+      });
+      notify(`⚠️ Duplicate: Ticket "${cleanCode}" is already verified.`);
+      return;
+    }
+
+    // Mark as verified
+    const nextVerified = [...verifiedTicketIds, foundBooking.id];
+    saveVerifiedTickets(nextVerified);
+
+    // Update the booking status to confirmed
+    dbService.updateBooking(foundBooking.id, { status: 'confirmed' });
+
+    playBeep('success');
+    setShowSuccessPulse(true);
+    setTimeout(() => {
+      setShowSuccessPulse(false);
+    }, 1200);
+
+    const logItem = {
+      id: `log-${Date.now()}-${Math.floor(Math.random()*1000)}`,
+      bookingId: foundBooking.id,
+      travelerName: foundBooking.travelerName || foundBooking.email,
+      itemName: foundBooking.itemName,
+      itemEmoji: foundBooking.itemEmoji,
+      itemType: foundBooking.itemType,
+      date: foundBooking.date,
+      time: new Date().toLocaleTimeString(),
+      success: true
+    };
+
+    if (sessionScannedTickets.length >= 10) {
+      const oldestId = sessionScannedTickets[sessionScannedTickets.length - 1].id;
+      setExitingLogId(oldestId);
+      setTimeout(() => {
+        setSessionScannedTickets(prev => {
+          const filtered = prev.filter(item => item.id !== oldestId);
+          return [logItem, ...filtered];
+        });
+        setExitingLogId(null);
+      }, 350);
+    } else {
+      setSessionScannedTickets(prev => [logItem, ...prev]);
+    }
+
+    if (batchVerifyEnabled) {
+      setScanResult({
+        success: true,
+        booking: foundBooking,
+        batch: true
+      });
+      notify(`✅ Verified "${foundBooking.itemName}" for ${logItem.travelerName}`);
+      
+      // Keep result displayed temporarily for 2.2 seconds during active stream
+      setTimeout(() => {
+        setScanResult(null);
+      }, 2200);
+    } else {
+      setScanResult({
+        success: true,
+        booking: foundBooking,
+        batch: false
+      });
+      notify(`✅ Ticket Verified.`);
+    }
+  };
+
+  const handleSimulateScan = (bookingId: string) => {
+    setIsSimulatingScan(true);
+    playBeep('success'); // playful sound effect indicating scanner capture trigger
+    setTimeout(() => {
+      setIsSimulatingScan(false);
+      handleVerifyTicketCode(bookingId);
+    }, 800);
+  };
+
   return (
     <div className="CommunicationCenter space-y-6" id="communication-center-root">
       {/* 📧 Global Sync & Security Notification Bar */}
@@ -473,18 +734,45 @@ export default function CommunicationCenter({ currentUser }: CommunicationCenter
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowSecurityModal(true)}
-          className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all ${
-            isEmailVerified 
-              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20" 
-              : "bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20"
-          }`}
-        >
-          {isEmailVerified ? <Lock size={12} /> : <LockOpen size={12} />}
-          Verification UI Panel
-        </button>
+        <div className="flex flex-wrap gap-2 items-center">
+          <button
+            type="button"
+            onClick={() => setShowQrScanOverlay(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-gold-500/30 bg-gold-500/10 text-gold-400 hover:bg-gold-500/20 transition-all font-sans cursor-pointer shadow-lg shadow-gold-500/5 hover:scale-[1.02] active:scale-[0.98]"
+          >
+            <QrCode size={12} className="text-gold-400 animate-pulse" />
+            Scan Tickets (QR)
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowSecurityModal(true)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all ${
+              isEmailVerified 
+                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20" 
+                : "bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20"
+            }`}
+          >
+            {isEmailVerified ? <Lock size={12} /> : <LockOpen size={12} />}
+            Verification UI Panel
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setView(view === 'emails' ? 'chat' : 'emails');
+              setActiveConversation(null);
+            }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all cursor-pointer ${
+              view === 'emails' 
+                ? "bg-sky-500 text-forest-950 border-sky-400 hover:bg-sky-400" 
+                : "bg-sky-500/10 text-sky-400 border-sky-500/20 hover:bg-sky-500/20"
+            }`}
+          >
+            <Mail size={12} />
+            Email Dispatch Hub
+          </button>
+        </div>
       </div>
 
       <div className="flex glass rounded-[2.5rem] border border-white/5 overflow-hidden h-[70vh] animate-in fade-in duration-500 relative">
@@ -1197,7 +1485,7 @@ export default function CommunicationCenter({ currentUser }: CommunicationCenter
                       <button
                         key={i}
                         type="button"
-                        onClick={() => setNewMessage(tpl.text)}
+                        onClick={() => handleNewMessageChange(tpl.text)}
                         className="bg-white/5 hover:bg-gold-500/20 hover:text-gold-400 text-white/60 px-2.5 py-1 rounded-full text-[9px] font-bold border border-white/5 hover:border-gold-500/25 transition-all uppercase tracking-wide cursor-pointer"
                         title="Click to insert template"
                       >
@@ -1243,7 +1531,7 @@ export default function CommunicationCenter({ currentUser }: CommunicationCenter
                     <input 
                       type="text"
                       value={newMessage}
-                      onChange={(e) => setNewMessage(e.target.value)}
+                      onChange={(e) => handleNewMessageChange(e.target.value)}
                       placeholder={
                         view === 'broadcast' 
                           ? `Publish broadcast (Sync: ${SYNC_EMAIL})` 
@@ -1759,6 +2047,547 @@ export default function CommunicationCenter({ currentUser }: CommunicationCenter
               </form>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL 5: Dedicated QR Scan and Ticket Verification Overlay */}
+      <AnimatePresence>
+        {showQrScanOverlay && (
+          <div className="fixed inset-0 z-[160] flex items-center justify-center p-3 md:p-6 select-none font-sans">
+            {/* Backdrop blurring */}
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowQrScanOverlay(false)}
+              className="absolute inset-0 bg-forest-950/90 backdrop-blur-xl"
+            />
+            
+            {/* Container Dialog */}
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0, y: 30 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 30 }}
+              className="bg-forest-900/95 border border-white/10 rounded-[2.5rem] w-full max-w-5xl h-[90vh] md:h-[85vh] overflow-hidden relative shadow-2xl flex flex-col z-10"
+            >
+              {/* Header bar of scanner */}
+              <div className="px-6 py-4 md:px-8 md:py-5 border-b border-white/5 flex justify-between items-center bg-white/[0.01] shrink-0">
+                <div className="flex items-center gap-3 overflow-hidden">
+                  <div className="p-2 bg-gold-400/10 border border-gold-400/20 text-gold-400 rounded-2xl shrink-0">
+                    <QrCode size={18} className="animate-pulse" />
+                  </div>
+                  <div className="overflow-hidden leading-tight">
+                    <h3 className="text-sm md:text-md font-display font-black text-white tracking-tight flex items-center gap-2">
+                      Gateway Ticket Token Verifier
+                      <span className="text-[8px] font-mono bg-gold-400 text-forest-950 px-1.5 py-0.5 rounded-full uppercase font-black tracking-widest animate-pulse">
+                        Scanner Live
+                      </span>
+                      <span className="text-[8px] font-mono bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 px-1.5 py-0.5 rounded-full uppercase font-black tracking-widest flex items-center gap-1">
+                        <span className="w-1 h-1 bg-emerald-400 rounded-full animate-ping" />
+                        {sessionScannedTickets.filter(t => t.success).length} Verified
+                      </span>
+                    </h3>
+                    <p className="text-[10px] text-white/50 italic truncate">
+                      Verify booking transactions, secure event access codes, and validate client boarding passes in real-time.
+                    </p>
+                  </div>
+                </div>
+                
+                <button 
+                  onClick={() => setShowQrScanOverlay(false)}
+                  className="p-1.5 hover:bg-white/5 rounded-full transition-all text-white/40 hover:text-white cursor-pointer border border-white/5 hover:border-white/10 shrink-0"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Bento Grid Content columns */}
+              <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-12">
+                
+                {/* LEFT: Live Camera & Scanner (7 cols) */}
+                <div className="lg:col-span-7 p-4 md:p-6 flex flex-col space-y-4 md:space-y-5 overflow-y-auto border-r border-white/5 bg-white/[0.005] h-full">
+                  
+                  {/* Controls / Options bar */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 shrink-0">
+                    {/* Batch verify toggle */}
+                    <div className="p-2.5 bg-white/5 border border-white/5 rounded-xl flex flex-col justify-between">
+                      <span className="text-[8px] font-black text-white/40 uppercase tracking-widest">Scanning Mode</span>
+                      <div className="flex justify-between items-center mt-1">
+                        <span className="text-[10px] font-bold text-white">Batch</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBatchVerifyEnabled(!batchVerifyEnabled);
+                            playBeep('success');
+                          }}
+                          className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-200 focus:outline-none shrink-0 ${
+                            batchVerifyEnabled ? 'bg-gold-500' : 'bg-white/10'
+                          }`}
+                        >
+                          <div className={`w-4 h-4 rounded-full bg-white transition-transform duration-200 ${
+                            batchVerifyEnabled ? 'translate-x-4' : 'translate-x-0'
+                          }`} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Sound beep control */}
+                    <div className="p-2.5 bg-white/5 border border-white/5 rounded-xl flex flex-col justify-between">
+                      <span className="text-[8px] font-black text-white/40 uppercase tracking-widest">Audio feedback</span>
+                      <div className="flex justify-between items-center mt-1">
+                        <span className="text-[10px] font-bold text-white">Beep</span>
+                        <button
+                          type="button"
+                          onClick={() => setSoundEnabled(!soundEnabled)}
+                          className={`p-0.5 rounded-lg transition-all flex items-center justify-center cursor-pointer ${soundEnabled ? 'text-gold-400' : 'text-white/30'}`}
+                        >
+                          {soundEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Camera indicator */}
+                    <div className="p-2.5 bg-white/5 border border-white/5 rounded-xl flex flex-col justify-between">
+                      <span className="text-[8px] font-black text-white/40 uppercase tracking-widest">Hardware Link</span>
+                      <div className="flex items-center justify-between mt-1">
+                        <span className="text-[10px] font-bold text-white truncate">Link</span>
+                        <span className={`inline-flex items-center gap-0.5 text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full border ${
+                          cameraStreaming 
+                            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                            : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                        }`}>
+                          <span className={`w-1 h-1 rounded-full ${cameraStreaming ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                          {cameraStreaming ? 'Live' : 'Mock'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Real-time Session Status Indicator */}
+                    <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex flex-col justify-between">
+                      <span className="text-[8px] font-black text-emerald-400 uppercase tracking-widest">Session Verified</span>
+                      <div className="flex justify-between items-center mt-1">
+                        <span className="text-[11px] font-mono font-black text-white flex items-center gap-1 leading-none">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          {sessionScannedTickets.filter(t => t.success).length}
+                        </span>
+                        <span className="text-[7.5px] font-extrabold text-emerald-400 uppercase font-mono bg-emerald-500/20 px-1 py-0.5 rounded leading-none">
+                          DONE
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Main Scanner Viewport Area */}
+                  <div className="relative aspect-video rounded-2xl overflow-hidden bg-forest-950 border border-white/10 shadow-lg flex flex-col items-center justify-center flex-1 min-h-[180px]">
+                    
+                    {/* Live Video Tag */}
+                    <video 
+                      ref={videoRef}
+                      playsInline
+                      muted
+                      className={`absolute inset-0 w-full h-full object-cover z-0.5 ${cameraStreaming ? 'block' : 'hidden'}`}
+                    />
+
+                    {/* Laser Scanner scrolling line overlay */}
+                    <div className="CommunicationCenter QRScan overlay absolute inset-0 z-10 pointer-events-none">
+                      <div className={`absolute left-0 right-0 h-0.5 bg-red-500/80 shadow-[0_0_8px_rgba(239,68,68,1)] animate-pulse ${
+                        (cameraStreaming || isSimulatingScan) ? 'animate-scanner-line' : 'top-1/2 -translate-y-1/2 opacity-30'
+                      }`} />
+                    </div>
+
+                    {/* Corners bracket decor */}
+                    <div className="absolute top-4 left-4 w-6 h-6 border-t-2 border-l-2 border-gold-400/90 rounded-tl-lg z-10" />
+                    <div className="absolute top-4 right-4 w-6 h-6 border-t-2 border-r-2 border-gold-400/90 rounded-tr-lg z-10" />
+                    <div className="absolute bottom-4 left-4 w-6 h-6 border-b-2 border-l-2 border-gold-400/90 rounded-bl-lg z-10" />
+                    <div className="absolute bottom-4 right-4 w-6 h-6 border-b-2 border-r-2 border-gold-400/90 rounded-br-lg z-10" />
+
+                    {/* Real-Time Session Status HUD Indicator */}
+                    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-15 bg-forest-950/85 backdrop-blur-md px-4 py-1.5 rounded-full border border-white/10 flex items-center gap-2 text-white">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                      </span>
+                      <span className="text-[9px] font-black uppercase tracking-wider font-mono">
+                        Session: <span className="text-emerald-400 font-extrabold">{sessionScannedTickets.filter(t => t.success).length} verified</span>
+                      </span>
+                    </div>
+
+                    {/* Simulated Radar when camera is offline or simulating */}
+                    {!cameraStreaming && (
+                      <div className="absolute inset-0 z-0 flex flex-col items-center justify-center p-4 text-center bg-gradient-to-b from-forest-950 via-forest-950/95 to-forest-900 overflow-hidden">
+                        {/* Radar grids */}
+                        <div className={`w-28 h-28 rounded-full border border-gold-400/10 flex items-center justify-center relative ${isSimulatingScan ? 'scale-105 active:scale-100' : 'animate-pulse'}`}>
+                          <div className="w-20 h-20 rounded-full border border-gold-400/10 flex items-center justify-center">
+                            <div className="w-12 h-12 rounded-full border border-gold-400/10 flex items-center justify-center">
+                              <Scan size={18} className="text-gold-400/30" />
+                            </div>
+                          </div>
+                          {/* Radial sweeping needle */}
+                          <div className="absolute inset-0 border-r border-gold-400/25 rounded-full animate-spin-slow origin-center" />
+                        </div>
+                        
+                        <div className="mt-4 space-y-1 z-10">
+                          <h4 className="text-[11px] font-black uppercase tracking-wider text-white">Scanner Camera Sandbox Offline</h4>
+                          <p className="text-[9px] text-white/50 max-w-xs mx-auto italic">
+                            {cameraError ? `System resources blocked: ${cameraError}` : "Camera input is fully simulated to support in-browser rapid testing."}
+                          </p>
+                          <p className="text-[9px] text-gold-400 font-bold bg-gold-400/10 border border-gold-400/20 px-2 py-0.5 rounded-full inline-block mt-2 font-mono">
+                            💡 Use Sidebar "Simulate Scan ⚡" button below
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Simulation Scan Overlay screen */}
+                    {isSimulatingScan && (
+                      <div className="absolute inset-0 bg-gold-500/20 z-10 flex flex-col items-center justify-center">
+                        <span className="px-4 py-2 bg-forest-950/90 rounded-2xl border border-gold-500/50 text-gold-400 text-[10px] font-bold tracking-widest uppercase flex items-center gap-1.5 animate-bounce">
+                          <Scan size={12} className="animate-spin" /> SCANNING QR BARCODE...
+                        </span>
+                      </div>
+                    )}
+
+                    {/* SCAN RESULT RESPONSE SCREEN INTERFACE */}
+                    <AnimatePresence>
+                      {scanResult && (
+                        <motion.div 
+                          initial={{ opacity: 0, scale: 0.9, y: 15 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.9, y: 15 }}
+                          className={`absolute inset-3 z-20 rounded-2xl flex flex-col justify-between p-4 overflow-hidden ${
+                            scanResult.success 
+                              ? 'bg-emerald-950/95 border border-emerald-400/30 shadow-emerald-500/10' 
+                              : scanResult.booking 
+                              ? 'bg-amber-950/95 border border-amber-400/30' 
+                              : 'bg-red-950/95 border border-red-400/30'
+                          }`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div className="flex items-center gap-2">
+                              {scanResult.success ? (
+                                <div className="p-1.5 bg-emerald-400 text-forest-950 rounded-lg">
+                                  <CheckCircle2 size={14} strokeWidth={2.5} />
+                                </div>
+                              ) : scanResult.booking ? (
+                                <div className="p-1.5 bg-amber-400 text-forest-950 rounded-lg">
+                                  <AlertTriangle size={14} strokeWidth={2.5} />
+                                </div>
+                              ) : (
+                                <div className="p-1.5 bg-red-400 text-forest-950 rounded-lg">
+                                  <X size={14} strokeWidth={2.5} />
+                                </div>
+                              )}
+                              <div>
+                                <h4 className="text-[11px] font-black uppercase tracking-widest text-white">
+                                  {scanResult.success ? "Verification Confirmed!" : scanResult.booking ? "Duplicate Scan Detected" : "Authentication Denied"}
+                                </h4>
+                                <span className="text-[8px] font-mono text-white/50">MATCH CODE: {scanResult.code || scanResult.booking?.id}</span>
+                              </div>
+                            </div>
+
+                            {scanResult.batch && (
+                              <span className="text-[8px] bg-emerald-500 text-forest-950 font-black px-1.5 py-0.5 rounded uppercase tracking-wider animate-pulse">
+                                batch-active
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Record details */}
+                          {scanResult.booking ? (
+                            <div className="bg-white/5 border border-white/5 rounded-xl p-3 space-y-1.5 text-left my-1.5">
+                              <div className="flex justify-between items-center pb-1.5 border-b border-white/5">
+                                <span className="text-[11px] font-black text-white flex items-center gap-1 leading-none">
+                                  <span className="text-xs">{scanResult.booking.itemEmoji}</span>
+                                  {scanResult.booking.itemName}
+                                </span>
+                                <span className="text-[8px] font-black uppercase text-gold-400 tracking-wider font-mono">
+                                  {scanResult.booking.itemType}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-y-1 text-[9px] text-white/70">
+                                <div>
+                                  <span className="text-white/30 uppercase text-[8px] block tracking-wide font-black">Traveler / Client</span>
+                                  <span className="font-bold truncate text-white block">{scanResult.booking.travelerName || scanResult.booking.email}</span>
+                                </div>
+                                <div>
+                                  <span className="text-white/30 uppercase text-[8px] block tracking-wide font-black">Scheduled Date</span>
+                                  <span className="font-bold text-white block">{scanResult.booking.date}</span>
+                                </div>
+                                <div>
+                                  <span className="text-white/30 uppercase text-[8px] block tracking-wide font-black">Party Size</span>
+                                  <span className="font-bold text-white block">{scanResult.booking.partySize}</span>
+                                </div>
+                                <div>
+                                  <span className="text-white/30 uppercase text-[8px] block tracking-wide font-black">Momo Payment Ref</span>
+                                  <span className="font-bold text-white block font-mono">Frw {scanResult.booking.price}</span>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="p-3 bg-white/5 rounded-xl border border-white/5 text-center my-3">
+                              <p className="text-[10px] font-semibold text-white/70 leading-relaxed italic">
+                                {scanResult.reason}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Actions on scanner feedback overlay */}
+                          <div className="flex gap-2 justify-end">
+                            {scanResult.batch ? (
+                              <div className="text-[9px] text-white/40 italic flex items-center gap-1 self-center">
+                                <span className="w-1 h-1 bg-emerald-400 rounded-full animate-ping" /> Camera stream remain active...
+                              </div>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => setScanResult(null)}
+                                  className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all ${
+                                    scanResult.success 
+                                      ? 'bg-emerald-400 text-forest-950 hover:bg-emerald-300' 
+                                      : scanResult.booking 
+                                      ? 'bg-amber-400 text-forest-950 hover:bg-amber-300' 
+                                      : 'bg-red-500 text-white hover:bg-red-400'
+                                  }`}
+                                >
+                                  Ready Next Ticket
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setScanResult(null);
+                                    setShowQrScanOverlay(false);
+                                  }}
+                                  className="px-3 py-1.5 text-[9px] bg-white/5 hover:bg-white/10 text-white font-black uppercase tracking-wider rounded-lg transition-all"
+                                >
+                                  Close Scanner
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  {/* Verification History list */}
+                  <div className="p-4 bg-white/5 border border-white/5 rounded-2xl flex flex-col space-y-2 shrink-0">
+                    <div className="flex justify-between items-center pb-1.5 border-b border-white/5">
+                      <div className="flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <h4 className="text-[10px] font-black uppercase text-white tracking-widest leading-none">
+                          Verification History
+                        </h4>
+                        <span className="px-2 py-0.5 rounded-full text-[8.5px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 flex items-center gap-1 leading-none">
+                          Last 10 Scans <span className="bg-emerald-500/25 text-white/90 px-1 rounded text-[7.5px] font-black">{Math.min(sessionScannedTickets.length, 10)}</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="max-h-[120px] overflow-y-auto custom-scrollbar space-y-1.5 pr-1">
+                      {sessionScannedTickets.length > 0 ? (
+                        <div className="space-y-1.5">
+                          <AnimatePresence mode="popLayout" initial={false}>
+                            {sessionScannedTickets.slice(0, 10).map((log) => {
+                              const isExiting = log.id === exitingLogId;
+                              return (
+                                <motion.div 
+                                  key={log.id}
+                                  initial={{ opacity: 0, height: 0, scale: 0.95 }}
+                                  animate={isExiting ? { opacity: 0, height: 0, scale: 0.9 } : { opacity: 1, height: 'auto', scale: 1 }}
+                                  exit={{ opacity: 0, height: 0, scale: 0.9 }}
+                                  transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                                  className="p-2 bg-white/[0.02] border border-white/5 rounded-xl flex items-center justify-between gap-3 text-[10px] overflow-hidden"
+                                >
+                                  <div className="flex items-center gap-2 overflow-hidden">
+                                    <span className="text-sm shrink-0">{log.itemEmoji || '🎟️'}</span>
+                                    <div className="overflow-hidden leading-tight">
+                                      <span className="text-white font-bold block truncate">{log.travelerName}</span>
+                                      <span className="text-[8px] font-mono text-white/50 block truncate">
+                                        ID: <span className="text-gold-400 font-bold">{log.bookingId}</span>
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-black uppercase tracking-wider flex items-center gap-1">
+                                      <Check size={10} strokeWidth={3} /> Verified
+                                    </span>
+                                    <span className="text-[8px] font-mono text-white/30">{log.time}</span>
+                                  </div>
+                                </motion.div>
+                              );
+                            })}
+                          </AnimatePresence>
+                        </div>
+                      ) : (
+                        <div className="py-6 flex flex-col items-center justify-center text-center opacity-40">
+                          <Clock size={16} className="text-white/40 mb-1" />
+                          <p className="text-[9px] font-bold text-white uppercase tracking-wider">No scanner logs</p>
+                          <p className="text-[8px] text-white/50 italic">Scanned tickets will appear here with confirmation status.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Manual Code text Submission input */}
+                  <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-2.5 shrink-0">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[9px] font-black uppercase text-white/40 tracking-widest pl-1">Manual Input Bypass</label>
+                      <span className="text-[8px] text-white/30 italic">Pasting confirmation IDs bypasses active camera need</span>
+                    </div>
+                    <form 
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handleVerifyTicketCode(scannedTicketSearch);
+                        setScannedTicketSearch('');
+                      }} 
+                      className="flex gap-2"
+                    >
+                      <input
+                        type="text"
+                        placeholder="e.g. BK-89A12B"
+                        value={scannedTicketSearch}
+                        onChange={(e) => setScannedTicketSearch(e.target.value)}
+                        className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-gold-500"
+                      />
+                      <button
+                        type="submit"
+                        className="px-4 py-2 bg-gold-450 hover:bg-gold-400 bg-gold-500 text-forest-950 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md shadow-gold-500/10 flex items-center gap-1 shrink-0 cursor-pointer"
+                      >
+                        <CheckCheck size={11} /> Validate
+                      </button>
+                    </form>
+                  </div>
+                </div>
+
+                {/* RIGHT: Sidebar List & Session Tally (5 cols) */}
+                <div className="lg:col-span-5 flex flex-col overflow-hidden h-full">
+                  
+                  {/* Top unverified tickets registry section (2/3 height) */}
+                  <div className="flex-1 overflow-y-auto p-4 md:p-6 flex flex-col border-b border-white/5">
+                    <div className="flex justify-between items-center pb-2.5 border-b border-white/5 mb-3 shrink-0">
+                      <div>
+                        <span className="text-[8px] font-black uppercase text-gold-400 tracking-widest">Database Sandbox</span>
+                        <h4 className="text-[10px] font-black text-white uppercase tracking-wider">Unverified Booking Tokens ({dbService.get().bookings.filter(b => !verifiedTicketIds.includes(b.id)).length})</h4>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 flex-1 min-h-[140px] overflow-y-auto custom-scrollbar pr-1">
+                      {dbService.get().bookings.filter(b => !verifiedTicketIds.includes(b.id)).length > 0 ? (
+                        dbService.get().bookings.filter(b => !verifiedTicketIds.includes(b.id)).map((booking) => (
+                          <div 
+                            key={booking.id}
+                            className="p-2.5 bg-white/[0.01] border border-white/5 hover:border-white/10 hover:bg-white/[0.03] rounded-xl flex items-center justify-between gap-3 transition-all"
+                          >
+                            <div className="flex items-center gap-2 overflow-hidden">
+                              <div className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center text-xs shrink-0">
+                                {booking.itemEmoji}
+                              </div>
+                              <div className="overflow-hidden leading-snug">
+                                <span className="text-[11px] font-bold text-white block truncate">{booking.travelerName || booking.email}</span>
+                                <span className="text-[9px] text-white/40 block font-mono truncate">
+                                  {booking.itemName} • <span className="text-gold-400 font-bold">{booking.id}</span>
+                                </span>
+                              </div>
+                            </div>
+                            
+                            <button
+                              type="button"
+                              onClick={() => handleSimulateScan(booking.id)}
+                              className="px-2 py-1 bg-gold-500/10 hover:bg-gold-500 hover:text-forest-950 text-gold-400 rounded-md text-[8px] font-black uppercase tracking-wider transition-all border border-gold-500/20 hover:border-gold-500 shrink-0 cursor-pointer"
+                              title="Simulate scanning passport barcode or QR on a phone"
+                            >
+                              Scan ⚡
+                            </button>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="h-full flex flex-col items-center justify-center opacity-40 text-center py-4 select-none bg-white/[0.01] rounded-xl border border-dashed border-white/5 p-3">
+                          <CheckCircle2 size={24} className="text-emerald-400 mb-1.5" />
+                          <h5 className="text-[9px] font-black uppercase tracking-wider text-white">All Bookings Cleared</h5>
+                          <p className="text-[8px] text-white/50 italic leading-snug mt-1 max-w-[170px]">
+                            No outstanding unverified ticket tokens are present in this database instance.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Bottom Session logs batch log history section (1/3 height) */}
+                  <div className="h-[28vh] overflow-hidden flex flex-col p-4 md:p-6 bg-forest-950/25 relative">
+                    <div className="flex justify-between items-center pb-2 border-b border-white/5 mb-2.5 shrink-0">
+                      <div>
+                        <span className="text-[8px] font-black uppercase text-emerald-400 tracking-widest">Audit Logs</span>
+                        <h4 className="text-[10px] font-black text-white uppercase tracking-wider">
+                          Session Scans ({sessionScannedTickets.length})
+                        </h4>
+                      </div>
+                      
+                      {sessionScannedTickets.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSessionScannedTickets([]);
+                            saveVerifiedTickets([]);
+                            notify("Session scanner logs and booking verified states cleared.");
+                            playBeep('warning');
+                          }}
+                          className="text-[8px] font-black uppercase tracking-wider text-red-400 hover:text-red-300 underline"
+                        >
+                          Reset Verifications
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto custom-scrollbar space-y-1 pr-1">
+                      {sessionScannedTickets.length > 0 ? (
+                        sessionScannedTickets.map((log) => (
+                          <div 
+                            key={log.id}
+                            className="p-1.5 bg-emerald-500/[0.01] border border-emerald-500/10 rounded-lg flex items-center justify-between text-[9px] animate-in slide-in-from-right duration-150"
+                          >
+                            <div className="flex items-center gap-1 overflow-hidden">
+                              <span className="text-xs shrink-0">{log.itemEmoji}</span>
+                              <div className="overflow-hidden leading-tight">
+                                <span className="text-white font-bold block truncate">{log.travelerName}</span>
+                                <span className="text-white/40 text-[8px] truncate block font-mono">
+                                  Verified: <span className="font-bold text-emerald-400">{log.bookingId}</span>
+                                </span>
+                              </div>
+                            </div>
+                            <span className="text-[8px] font-mono text-white/30 shrink-0">{log.time}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="h-full flex flex-col items-center justify-center opacity-30 select-none text-center">
+                          <span className="text-[9px] uppercase font-bold text-white tracking-widest">Session log empty</span>
+                          <span className="text-[8px] text-white/40 block leading-tight pt-0.5">
+                            No tickets scanned during this session yet.
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                </div>
+
+              </div>
+
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Success verified high-contrast highlight pulse */}
+      <AnimatePresence>
+        {showSuccessPulse && (
+          <motion.div
+            initial={{ opacity: 0.8, scale: 1 }}
+            animate={{ opacity: 0, scale: 1.03 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 1.2, ease: "easeOut" }}
+            className="fixed inset-0 pointer-events-none z-[200] border-[16px] border-emerald-500 shadow-[inset_0_0_120px_rgba(16,185,129,0.45)] rounded-none"
+          />
         )}
       </AnimatePresence>
     </div>

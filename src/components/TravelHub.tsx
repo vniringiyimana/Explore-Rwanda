@@ -280,82 +280,70 @@ export default function TravelHub({ lang, onBook }: { lang: string, onBook?: (id
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             <AnimatePresence mode="popLayout">
-              {activeEvents === 'Festivals' && (
-                <>
-                  {[
-                    { name: 'Kwita Izina (Gorilla Naming)', date: 'Sept 2026', id: 300, img: 'https://images.unsplash.com/photo-1542133800-474be6f89073' },
-                    { name: 'Hobe Rwanda Festival', date: 'August 2026', id: 301, img: 'https://images.unsplash.com/photo-1514525253361-bee8d40d9b4b' },
-                    { name: 'Kigali UP Music Festival', date: 'July 2026', id: 302, img: 'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3' },
-                  ].map((e) => (
-                    <motion.div key={e.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="group relative rounded-3xl overflow-hidden aspect-video">
-                      <img src={e.img} className="absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-110" />
-                      <div className="absolute inset-0 bg-linear-to-t from-black via-transparent" />
-                      <div className="absolute inset-0 p-6 flex flex-col justify-end">
-                         <span className="text-[10px] font-bold text-gold-400 uppercase mb-1">{e.date}</span>
-                         <div className="flex justify-between items-end">
-                           <h4 className="text-lg font-bold text-white">{e.name}</h4>
-                           <button 
-                             onClick={() => onBook?.(e.id, 'event')}
-                             className="p-2 glass rounded-xl text-white hover:text-gold-400 transition-colors"
-                           >
-                              <Ticket size={16} />
-                           </button>
-                         </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </>
-              )}
-              {activeEvents === 'Concerts' && (
-                <>
-                  {[
-                    { name: 'Kigali Jazz Junction', date: 'Monthly', id: 2001, img: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4' },
-                    { name: 'Symphony Orchestra KGL', date: 'June 2026', id: 302, img: 'https://images.unsplash.com/photo-1514320298322-2bb6da79afca' }
-                  ].map((e) => (
-                    <motion.div key={e.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="group relative rounded-3xl overflow-hidden aspect-video">
-                      <img src={e.img} className="absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-110" />
-                      <div className="absolute inset-0 bg-linear-to-t from-black via-transparent" />
-                      <div className="absolute inset-0 p-6 flex flex-col justify-end">
-                         <span className="text-[10px] font-bold text-gold-400 uppercase mb-1">{e.date}</span>
-                         <div className="flex justify-between items-end">
-                           <h4 className="text-lg font-bold text-white">{e.name}</h4>
-                           <button 
-                             onClick={() => onBook?.(e.id, 'event')}
-                             className="p-2 glass rounded-xl text-white hover:text-gold-400 transition-colors"
-                           >
-                              <Ticket size={16} />
-                           </button>
-                         </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </>
-              )}
-              {activeEvents === 'Sports' && (
-                <>
-                  {[
-                    { name: 'Tour du Rwanda', date: 'Feb 2026', id: 900, img: 'https://images.unsplash.com/photo-1541625602330-2277a1cd13a1' },
-                    { name: 'KGL Peace Marathon', date: 'May 2026', id: 901, img: 'https://images.unsplash.com/photo-1452626012306-dd03d0774246' }
-                  ].map((e) => (
-                    <motion.div key={e.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="group relative rounded-3xl overflow-hidden aspect-video">
-                      <img src={e.img} className="absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-110" />
-                      <div className="absolute inset-0 bg-linear-to-t from-black via-transparent" />
-                      <div className="absolute inset-0 p-6 flex flex-col justify-end">
-                         <span className="text-[10px] font-bold text-gold-400 uppercase mb-1">{e.date}</span>
-                         <div className="flex justify-between items-end">
-                           <h4 className="text-lg font-bold text-white">{e.name}</h4>
-                           <button 
-                             onClick={() => onBook?.(e.id, 'event')}
-                             className="p-2 glass rounded-xl text-white hover:text-gold-400 transition-colors"
-                           >
-                              <Ticket size={16} />
-                           </button>
-                         </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </>
-              )}
+              {activeEvents === 'Festivals' && [
+                { name: 'Kwita Izina (Gorilla Naming)', date: 'Sept 2026', id: 300, img: 'https://images.unsplash.com/photo-1542133800-474be6f89073' },
+                { name: 'Hobe Rwanda Festival', date: 'August 2026', id: 301, img: 'https://images.unsplash.com/photo-1514525253361-bee8d40d9b4b' },
+                { name: 'Kigali UP Music Festival', date: 'July 2026', id: 302, img: 'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3' },
+              ].map((e) => (
+                <motion.div key={e.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="group relative rounded-3xl overflow-hidden aspect-video">
+                  <img src={e.img} className="absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-110" />
+                  <div className="absolute inset-0 bg-linear-to-t from-black via-transparent" />
+                  <div className="absolute inset-0 p-6 flex flex-col justify-end">
+                     <span className="text-[10px] font-bold text-gold-400 uppercase mb-1">{e.date}</span>
+                     <div className="flex justify-between items-end">
+                       <h4 className="text-lg font-bold text-white">{e.name}</h4>
+                       <button 
+                         onClick={() => onBook?.(e.id, 'event')}
+                         className="p-2 glass rounded-xl text-white hover:text-gold-400 transition-colors"
+                       >
+                          <Ticket size={16} />
+                       </button>
+                     </div>
+                  </div>
+                </motion.div>
+              ))}
+              {activeEvents === 'Concerts' && [
+                { name: 'Kigali Jazz Junction', date: 'Monthly', id: 2001, img: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4' },
+                { name: 'Symphony Orchestra KGL', date: 'June 2026', id: 302, img: 'https://images.unsplash.com/photo-1514320298322-2bb6da79afca' }
+              ].map((e) => (
+                <motion.div key={e.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="group relative rounded-3xl overflow-hidden aspect-video">
+                  <img src={e.img} className="absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-110" />
+                  <div className="absolute inset-0 bg-linear-to-t from-black via-transparent" />
+                  <div className="absolute inset-0 p-6 flex flex-col justify-end">
+                     <span className="text-[10px] font-bold text-gold-400 uppercase mb-1">{e.date}</span>
+                     <div className="flex justify-between items-end">
+                       <h4 className="text-lg font-bold text-white">{e.name}</h4>
+                       <button 
+                         onClick={() => onBook?.(e.id, 'event')}
+                         className="p-2 glass rounded-xl text-white hover:text-gold-400 transition-colors"
+                       >
+                          <Ticket size={16} />
+                       </button>
+                     </div>
+                  </div>
+                </motion.div>
+              ))}
+              {activeEvents === 'Sports' && [
+                { name: 'Tour du Rwanda', date: 'Feb 2026', id: 900, img: 'https://images.unsplash.com/photo-1541625602330-2277a1cd13a1' },
+                { name: 'KGL Peace Marathon', date: 'May 2026', id: 901, img: 'https://images.unsplash.com/photo-1452626012306-dd03d0774246' }
+              ].map((e) => (
+                <motion.div key={e.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="group relative rounded-3xl overflow-hidden aspect-video">
+                  <img src={e.img} className="absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-110" />
+                  <div className="absolute inset-0 bg-linear-to-t from-black via-transparent" />
+                  <div className="absolute inset-0 p-6 flex flex-col justify-end">
+                     <span className="text-[10px] font-bold text-gold-400 uppercase mb-1">{e.date}</span>
+                     <div className="flex justify-between items-end">
+                       <h4 className="text-lg font-bold text-white">{e.name}</h4>
+                       <button 
+                         onClick={() => onBook?.(e.id, 'event')}
+                         className="p-2 glass rounded-xl text-white hover:text-gold-400 transition-colors"
+                       >
+                          <Ticket size={16} />
+                       </button>
+                     </div>
+                  </div>
+                </motion.div>
+              ))}
               {activeEvents === 'Nightlife' && (
                 <div className="lg:col-span-3 glass p-12 rounded-[3rem] border border-white/10 text-center">
                   <div className="w-16 h-16 bg-gold-500/10 rounded-2xl flex items-center justify-center text-gold-500 mx-auto mb-6">

@@ -1,4 +1,4 @@
-import { Destination, Experience, Hotel, Booking, User, UserRole, Message } from '../types';
+import { Destination, Experience, Hotel, Booking, User, UserRole, Message, EmailLog } from '../types';
 import { DESTINATIONS, HOTELS, EXPERIENCES, TRANSPORT_OPTIONS, EVENTS } from '../constants';
 
 const DB_KEY = 'rwanda_hub_db';
@@ -12,11 +12,13 @@ interface DbState {
   events: any[];
   transport: any[];
   messages: Message[];
+  emails: EmailLog[];
 }
 
 const initialState: DbState = {
   users: [
-    { id: '1', email: 'vedasteniringiyimana12@gmail.com', name: 'Master Admin', role: UserRole.ADMIN, password: 'password123', emailVerified: true, isActive: true },
+    { id: '1', email: 'vedasteniringiyimana2005@gmail.com', name: 'Master Admin', role: UserRole.ADMIN, password: 'password123', emailVerified: true, isActive: true },
+    { id: '1-alt', email: 'vedasteniringiyimana12@gmail.com', name: 'Master Assistant', role: UserRole.ADMIN, password: 'password123', emailVerified: true, isActive: true },
     { id: '2', email: 'tourist@gmail.com', name: 'John Doe', role: UserRole.TOURIST, password: 'password123', emailVerified: false, isActive: true },
     { id: '3', email: 'moderator@rwandahub.com', name: 'Alice Smith', role: UserRole.MODERATOR, password: 'password123', emailVerified: true, isActive: true },
     { id: '4', email: 'partner@kigalihotels.rw', name: 'Emmanuel R.', role: UserRole.OPERATOR, businessName: 'Kigali Heights', password: 'password123', emailVerified: true, isActive: true },
@@ -89,16 +91,87 @@ const initialState: DbState = {
       type: 'broadcast' 
     }
   ],
+  emails: [
+    {
+      id: 'EM-1',
+      bookingId: 'mock-1',
+      recipient: 'tourist@gmail.com',
+      itemName: 'Akagera National Park',
+      sender: 'dispatch@rwandahub.com',
+      subject: '🎟️ Your Rwanda Hub Travel Portal Ticket & Itinerary [Ref: mock-1]',
+      sentAt: new Date(Date.now() - 86400000).toISOString(),
+      status: 'sent',
+      pdfSize: '24 KB',
+      qrData: 'rwandahub://ticket/mock-1/Akagera%20National%20Park/' + new Date(Date.now() + 86400000).toISOString().split('T')[0] + '/2%20People'
+    }
+  ]
 };
 
 export const dbService = {
   get: (): DbState => {
+    let state: DbState;
     const saved = localStorage.getItem(DB_KEY);
     if (!saved) {
-      localStorage.setItem(DB_KEY, JSON.stringify(initialState));
-      return initialState;
+      state = JSON.parse(JSON.stringify(initialState));
+    } else {
+      try {
+        state = JSON.parse(saved);
+      } catch (e) {
+        state = JSON.parse(JSON.stringify(initialState));
+      }
     }
-    return JSON.parse(saved);
+
+    let updated = false;
+    if (!state.emails) {
+      state.emails = JSON.parse(JSON.stringify(initialState.emails || []));
+      updated = true;
+    }
+    const targetMaster = 'vedasteniringiyimana2005@gmail.com';
+    const targetBackup = 'vedasteniringiyimana12@gmail.com';
+
+    const hasMaster = state.users.some(u => u.email.toLowerCase() === targetMaster);
+    if (!hasMaster) {
+      state.users.push({
+        id: '1',
+        email: targetMaster,
+        name: 'Master Admin',
+        role: UserRole.ADMIN,
+        password: 'password123',
+        emailVerified: true,
+        isActive: true
+      });
+      updated = true;
+    }
+
+    const hasBackup = state.users.some(u => u.email.toLowerCase() === targetBackup);
+    if (!hasBackup) {
+      state.users.push({
+        id: '7',
+        email: targetBackup,
+        name: 'Platform Admin',
+        role: UserRole.ADMIN,
+        password: 'password123',
+        emailVerified: true,
+        isActive: true
+      });
+      updated = true;
+    }
+
+    state.users = state.users.map(u => {
+      const emailLower = u.email.toLowerCase();
+      if (emailLower === targetMaster || emailLower === targetBackup) {
+        if (u.role !== UserRole.ADMIN || !u.isActive || !u.emailVerified) {
+          updated = true;
+          return { ...u, role: UserRole.ADMIN, isActive: true, emailVerified: true };
+        }
+      }
+      return u;
+    });
+
+    if (updated || !saved) {
+      localStorage.setItem(DB_KEY, JSON.stringify(state));
+    }
+    return state;
   },
 
   save: (state: DbState) => {
@@ -208,6 +281,19 @@ export const dbService = {
     const state = dbService.get();
     state.bookings = state.bookings.filter(b => b.id !== id);
     dbService.save(state);
+  },
+
+  // Emails
+  addEmailLog: (log: Omit<EmailLog, 'id' | 'sentAt'>) => {
+    const state = dbService.get();
+    const newLog: EmailLog = {
+      ...log,
+      id: `EM-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
+      sentAt: new Date().toISOString()
+    };
+    state.emails.unshift(newLog);
+    dbService.save(state);
+    return newLog;
   },
 
   // Messages

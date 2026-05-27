@@ -6,9 +6,10 @@ import AdminDashboard from './AdminDashboard';
 import PartnerDashboard from './PartnerDashboard';
 import ContentDashboard from './ContentDashboard';
 import SupportDashboard from './SupportDashboard';
+import DashboardVisualTour from './DashboardVisualTour';
 import VoiceSearchButton from '../VoiceSearchButton';
 import { motion, AnimatePresence } from 'motion/react';
-import { MASTER_EMAIL } from '../../constants';
+import { MASTER_EMAIL, ALT_MASTER_EMAIL } from '../../constants';
 import { 
   Bell, 
   Calendar, 
@@ -81,7 +82,7 @@ export default function DashboardLayout({ user, onLogout, bookings }: DashboardL
   const [customMsg, setCustomMsg] = useState('');
   const [customType, setCustomType] = useState<'Gorilla Trek' | 'Lodge Stay' | 'Flight Booking' | 'Payment Alert'>('Gorilla Trek');
 
-  const isMaster = user.email.toLowerCase() === MASTER_EMAIL.toLowerCase();
+  const isMaster = user.email.toLowerCase() === MASTER_EMAIL.toLowerCase() || user.email.toLowerCase() === ALT_MASTER_EMAIL.toLowerCase();
 
   const handleRoleChange = (role: UserRole) => {
     setActiveRole(role);
@@ -137,6 +138,17 @@ export default function DashboardLayout({ user, onLogout, bookings }: DashboardL
   };
 
   const renderContent = () => {
+    if (activeTab === 'tour') {
+      return (
+        <DashboardVisualTour 
+          onSwitchRole={handleRoleChange} 
+          onGoToTab={(tab) => setActiveTab(tab)} 
+          activeRole={activeRole}
+          userEmail={user.email}
+        />
+      );
+    }
+
     // Pass active voice query down if need be
     const dashboardProps = { 
       activeTab, 
@@ -148,6 +160,40 @@ export default function DashboardLayout({ user, onLogout, bookings }: DashboardL
     
     // Sandbox Bypass: we allow dynamic switcher to display any dashboard for simulation
     const effectivelyActiveRole = activeRole;
+
+    const isMaster = user.email.toLowerCase() === MASTER_EMAIL.toLowerCase() || user.email.toLowerCase() === ALT_MASTER_EMAIL.toLowerCase();
+
+    if (effectivelyActiveRole !== UserRole.TOURIST && !isMaster) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-[50vh] text-center p-8 bg-forest-950/40 border border-white/5 rounded-[2.5rem] max-w-2xl mx-auto space-y-6">
+          <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center text-red-400 border border-red-500/20 shadow-lg shadow-red-500/5 animate-pulse">
+            <AlertCircle size={28} />
+          </div>
+          
+          <div className="space-y-2">
+            <h3 className="font-display text-2xl font-bold text-white tracking-tight">Google Credential Required</h3>
+            <p className="text-sm text-white/60 max-w-md mx-auto leading-relaxed">
+              To access and explore multi-role workspace dashboards, your authenticated app session email must match your active Google identity coordinate.
+            </p>
+          </div>
+
+          <div className="w-full bg-white/[0.02] border border-white/5 rounded-3xl p-5 space-y-3 font-mono text-xs text-left">
+            <div className="flex justify-between items-center py-1 border-b border-white/5">
+              <span className="text-white/40 uppercase font-bold tracking-wider text-[10px]">Active Session Email:</span>
+              <span className="text-amber-400 font-bold">{user.email}</span>
+            </div>
+            <div className="flex justify-between items-center py-1">
+              <span className="text-white/40 uppercase font-bold tracking-wider text-[10px]">Required Google Credential:</span>
+              <span className="text-emerald-400 font-bold">{ALT_MASTER_EMAIL}</span>
+            </div>
+          </div>
+
+          <p className="text-xs text-white/40 italic">
+            Please log out or switch user profiles to an account registered with <strong className="text-white">{ALT_MASTER_EMAIL}</strong> to resume.
+          </p>
+        </div>
+      );
+    }
 
     switch (effectivelyActiveRole) {
       case UserRole.ADMIN:

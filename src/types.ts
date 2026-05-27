@@ -17,6 +17,7 @@ export interface User {
   bio?: string;
   emailVerified?: boolean;
   isActive?: boolean;
+  verificationToken?: string;
 }
 
 export interface Booking {
@@ -29,7 +30,7 @@ export interface Booking {
   date: string;
   time?: string;
   partySize: string;
-  status: 'confirmed' | 'pending' | 'cancelled';
+  status: 'confirmed' | 'pending' | 'cancelled' | 'verified';
   price: number;
   paymentMethod?: string;
   momoNumber?: string;
@@ -151,4 +152,17 @@ export interface DashboardProps {
   bookings: Booking[];
   onTabChange?: (tab: string) => void;
   voiceSearchQuery?: string | null;
+}
+
+export interface EmailLog {
+  id: string;
+  bookingId: string;
+  recipient: string;
+  subject: string;
+  sentAt: string;
+  status: 'sent' | 'failed' | 'processing';
+  pdfSize: string;
+  qrData: string;
+  sender: string;
+  itemName: string;
 }

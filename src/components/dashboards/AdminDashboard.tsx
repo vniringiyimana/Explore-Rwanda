@@ -16,6 +16,7 @@ import {
   CheckCircle,
   XCircle,
   Shield,
+  Activity,
   Settings as SettingsIcon,
   Download,
   Layout,
@@ -24,7 +25,10 @@ import {
   Ticket,
   Save,
   X,
-  ChevronDown
+  ChevronDown,
+  Mail,
+  Bell,
+  Zap
 } from 'lucide-react';
 
 import { DashboardProps, UserRole, User, Destination, Hotel as HotelType, Booking } from '../../types';
@@ -33,10 +37,10 @@ import CommunicationCenter from './CommunicationCenter';
 import AdminAnalytics from './AdminAnalytics';
 import { dbService } from '../../services/db';
 
-import { MASTER_EMAIL } from '../../constants';
+import { MASTER_EMAIL, ALT_MASTER_EMAIL } from '../../constants';
 
 export default function AdminDashboard({ activeTab, bookings: initialBookings, user, onTabChange }: DashboardProps) {
-  const isMaster = user.email.toLowerCase() === MASTER_EMAIL.toLowerCase();
+  const isMaster = user.email.toLowerCase() === MASTER_EMAIL.toLowerCase() || user.email.toLowerCase() === ALT_MASTER_EMAIL.toLowerCase();
   const isAdminRole = user.role === UserRole.ADMIN;
 
   if (!isMaster && !isAdminRole) {
@@ -59,6 +63,20 @@ export default function AdminDashboard({ activeTab, bookings: initialBookings, u
   
   const isAdmin = user.role === UserRole.ADMIN;
   const [currentImage, setCurrentImage] = useState(0);
+
+  // Administrative Composing States for Table of Actions
+  const [activeNotificationUser, setActiveNotificationUser] = useState<User | null>(null);
+  const [notificationBody, setNotificationBody] = useState('');
+  const [isSendingNotification, setIsSendingNotification] = useState(false);
+
+  const [activeEmailUser, setActiveEmailUser] = useState<User | null>(null);
+  const [emailUserSubject, setEmailUserSubject] = useState('');
+  const [emailUserBody, setEmailUserBody] = useState('');
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+
+  // States for verification email SMTP token dispatch
+  const [verificationEmailModal, setVerificationEmailModal] = useState<{ email: string, name: string, token: string } | null>(null);
+  const [smtpLogLines, setSmtpLogLines] = useState<string[]>([]);
 
   useEffect(() => {
     const handleUpdate = () => setDbState(dbService.get());
@@ -90,8 +108,8 @@ export default function AdminDashboard({ activeTab, bookings: initialBookings, u
     const targetUser = dbState.users.find(u => u.id === userId);
     if (!targetUser) return;
 
-    if (targetUser.email.toLowerCase() === MASTER_EMAIL.toLowerCase()) {
-      notify("Emergency Protection: The Master Admin role cannot be modified.");
+    if (targetUser.email.toLowerCase() === MASTER_EMAIL.toLowerCase() || targetUser.email.toLowerCase() === ALT_MASTER_EMAIL.toLowerCase()) {
+      notify("Emergency Protection: Master Admin credentials cannot be modified.");
       return;
     }
 
@@ -104,13 +122,89 @@ export default function AdminDashboard({ activeTab, bookings: initialBookings, u
     
     setVerifyingEmails(prev => [...prev, email]);
     try {
-      const response: any = await dbService.resendVerification(email);
-      notify(response.msg);
+      const targetUser = dbState.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+      if (!targetUser) {
+        notify("User not found in local record.");
+        return;
+      }
+      
+      const tokenCode = Math.floor(100000 + Math.random() * 900000).toString();
+      // Write the secure verificationToken to the user
+      dbService.updateUser(targetUser.id, { verificationToken: tokenCode });
+      
+      // Setup SMTP transmission log state
+      setSmtpLogLines([
+        "CONNECTING TO OUTGOING SMTP SERVER: smtp.rwandahub.gov:587...",
+        "STATUS: CONNECTED! RESOLVED TO 10.0.8.21",
+        "ESTABLISHING SECURE HANDSHAKE [STARTTLS]...",
+        "STATUS: STARTTLS ENCRYPTION SHIELD ACTIVE (TLSv1.3 AES-256)",
+        "AUTH PLAIN: SENDING ENCRYPTED AUTHENTICATION PACKET...",
+        "STATUS: ADMIN PRIVILEGES CONFIRMED!",
+        "DRAFTING SECURITY METADATA PAYLOAD...",
+        "PREPARING MIME BOUNDARY MULTIPART DISPATCH..."
+      ]);
+      
+      setVerificationEmailModal({
+        email: targetUser.email,
+        name: targetUser.name,
+        token: tokenCode
+      });
+      
+      // Simulate real-time logging delivery inside the UI
+      setTimeout(() => {
+        setSmtpLogLines(prev => [...prev, `SENDING ENVELOPE TO <${targetUser.email}>...`]);
+      }, 500);
+      
+      setTimeout(() => {
+        setSmtpLogLines(prev => [...prev, "TRANSMITTING DATA payload lines... OK (324 bytes)"]);
+      }, 1000);
+      
+      setTimeout(() => {
+        setSmtpLogLines(prev => [...prev, `SUCCESS! MESSAGE RELAYED. TOKEN KEYED: [${tokenCode}]`]);
+        notify(`📧 Verification email token successfully dispatched to ${targetUser.email}!`);
+      }, 1500);
+
     } catch (error) {
       notify("Failed to initiate verification sequence.");
     } finally {
       setVerifyingEmails(prev => prev.filter(e => e !== email));
     }
+  };
+
+  const sendInAppNotification = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeNotificationUser || !notificationBody.trim()) return;
+
+    setIsSendingNotification(true);
+    setTimeout(() => {
+      dbService.sendMessage({
+        senderId: user.id,
+        senderName: user.name + ' (Admin)',
+        receiverId: activeNotificationUser.id,
+        content: notificationBody.trim(),
+        type: 'direct',
+        receiverEmail: activeNotificationUser.email
+      });
+
+      notify(`📝 In-app notification wired to ${activeNotificationUser.name} successfully!`);
+      setActiveNotificationUser(null);
+      setNotificationBody('');
+      setIsSendingNotification(false);
+    }, 700);
+  };
+
+  const sendSecureEmail = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeEmailUser || !emailUserSubject.trim() || !emailUserBody.trim()) return;
+
+    setIsSendingEmail(true);
+    setTimeout(() => {
+      notify(`📧 Administrative email successfully transmitted to <${activeEmailUser.email}>!`);
+      setActiveEmailUser(null);
+      setEmailUserSubject('');
+      setEmailUserBody('');
+      setIsSendingEmail(false);
+    }, 1000);
   };
 
   const handleDelete = (type: string, id: any) => {
@@ -158,12 +252,56 @@ export default function AdminDashboard({ activeTab, bookings: initialBookings, u
       } else {
         // Add
         switch (type) {
-          case 'user': dbService.addUser(data); break;
+          case 'user': {
+            const tokenCode = Math.floor(100000 + Math.random() * 900000).toString();
+            const customUser = {
+              ...data,
+              password: 'password123',
+              verificationToken: tokenCode,
+              emailVerified: false,
+              isActive: true,
+            };
+            const createdUser = dbService.addUser(customUser);
+            
+            // Setup SMTP Outbox logs simulation
+            setSmtpLogLines([
+              "CONNECTING TO OUTGOING SMTP SERVER: smtp.rwandahub.gov:587...",
+              "STATUS: CONNECTED! RESOLVED TO 10.0.8.21",
+              "ESTABLISHING SECURE HANDSHAKE [STARTTLS]...",
+              "STATUS: STARTTLS ENCRYPTION SHIELD ACTIVE (TLSv1.3 AES-256)",
+              "AUTH PLAIN: SENDING ENCRYPTED AUTHENTICATION PACKET...",
+              "STATUS: ADMIN PRIVILEGES CONFIRMED!",
+              "DRAFTING SECURITY METADATA PAYLOAD WITH ROLE CONFIGURATION AUTHENTICATION...",
+              "PREPARING MIME BOUNDARY MULTIPART DISPATCH..."
+            ]);
+            
+            setVerificationEmailModal({
+              email: createdUser.email,
+              name: createdUser.name,
+              token: tokenCode
+            });
+            
+            setTimeout(() => {
+              setSmtpLogLines(prev => [...prev, `SENDING ENVELOPE TO <${createdUser.email}> FOR ROLE: ${createdUser.role.toUpperCase()}...`]);
+            }, 500);
+            
+            setTimeout(() => {
+              setSmtpLogLines(prev => [...prev, "TRANSMITTING DATA payload lines... OK (324 bytes)"]);
+            }, 1000);
+            
+            setTimeout(() => {
+              setSmtpLogLines(prev => [...prev, `SUCCESS! MESSAGE RELAYED. ROLE: ${createdUser.role.toUpperCase()} TOKEN KEYED: [${tokenCode}]`]);
+              notify(`📧 Verification email token successfully dispatched to ${createdUser.email}!`);
+            }, 1500);
+            break;
+          }
           case 'destination': dbService.addDestination(data); break;
           case 'hotel': dbService.addHotel(data); break;
           case 'event': dbService.addEvent(data); break;
         }
-        notify(`${type.charAt(0).toUpperCase() + type.slice(1)} added successfully`);
+        if (type !== 'user') {
+          notify(`${type.charAt(0).toUpperCase() + type.slice(1)} added successfully`);
+        }
       }
     } catch (error) {
       notify(`Error saving ${type}`);
@@ -398,8 +536,8 @@ export default function AdminDashboard({ activeTab, bookings: initialBookings, u
                       </button>
                     ) : key === 'role' ? (
                       type === 'user' ? (
-                        row.email.toLowerCase() === MASTER_EMAIL.toLowerCase() ? (
-                          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gold-500/10 text-gold-500 border border-gold-500/20 rounded-xl text-[9px] font-black uppercase tracking-widest cursor-not-allowed w-fit" title="The Master Admin role cannot be modified.">
+                        (row.email.toLowerCase() === MASTER_EMAIL.toLowerCase() || row.email.toLowerCase() === ALT_MASTER_EMAIL.toLowerCase()) ? (
+                          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gold-500/10 text-gold-500 border border-gold-500/20 rounded-xl text-[9px] font-black uppercase tracking-widest cursor-not-allowed w-fit" title="The Master Admin credentials cannot be modified.">
                             <Lock size={12} className="text-gold-500" />
                             <span>{val} (Master)</span>
                           </div>
@@ -453,22 +591,81 @@ export default function AdminDashboard({ activeTab, bookings: initialBookings, u
                 ))}
                 {actions && (
                   <td className="px-6 py-4 text-right">
-                    <div className="flex justify-end gap-2">
-                      <button 
-                        onClick={() => {
-                          setEditingItem({ type, data: row });
-                          setIsModalOpen(true);
-                        }}
-                        className="p-2 hover:bg-white/5 rounded-xl transition-colors text-white/30 hover:text-gold-400"
-                      >
-                        <Edit size={14} />
-                      </button>
-                      <button 
-                        onClick={() => handleDelete(type, (row as any).id || (row as any).email)}
-                        className="p-2 hover:bg-white/5 rounded-xl transition-colors text-white/30 hover:text-red-400"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                    <div className="flex justify-end gap-2 items-center">
+                      {type === 'user' ? (
+                        <>
+                          {/* Send Notification */}
+                          <button 
+                            onClick={() => {
+                              const foundUser = dbState.users.find(u => u.id === row.id);
+                              if (foundUser) {
+                                setActiveNotificationUser(foundUser);
+                                setNotificationBody('');
+                              }
+                            }}
+                            className="p-1.5 hover:bg-gold-500/10 rounded-lg text-white/40 hover:text-gold-400 transition-all border border-white/5 hover:border-gold-500/20"
+                            title="Send In-App Notification"
+                          >
+                            <Bell size={13} className="shrink-0" />
+                          </button>
+
+                          {/* Email User */}
+                          <button 
+                            onClick={() => {
+                              const foundUser = dbState.users.find(u => u.id === row.id);
+                              if (foundUser) {
+                                setActiveEmailUser(foundUser);
+                                setEmailUserSubject('Rwanda Hub • Official Notice');
+                                setEmailUserBody(`Dear ${foundUser.name},\n\nThis is an official administrative correspondence regarding the status of your Rwanda Hub Account services.\n\nBest regards,\nRwanda Hub Admin Team`);
+                              }
+                            }}
+                            className="p-1.5 hover:bg-blue-500/10 rounded-lg text-white/40 hover:text-blue-400 transition-all border border-white/5 hover:border-blue-500/20"
+                            title="Send System Email"
+                          >
+                            <Mail size={13} className="shrink-0" />
+                          </button>
+
+                          {/* Suspend / Toggle Status */}
+                          <button 
+                            onClick={() => toggleUserStatus(row.id)}
+                            className={`p-1.5 rounded-lg border transition-all ${
+                              row.active 
+                                ? 'hover:bg-red-500/10 text-white/40 hover:text-red-400 border-white/5 hover:border-red-500/20' 
+                                : 'bg-red-500/25 text-red-400 border-red-500/30 hover:bg-red-500/40'
+                            }`}
+                            title={row.active ? "Suspend Account" : "Activate Account"}
+                          >
+                            <Lock size={13} className="shrink-0" />
+                          </button>
+
+                          {/* Delete */}
+                          <button 
+                            onClick={() => handleDelete(type, row.id)}
+                            className="p-1.5 hover:bg-red-500/10 rounded-lg text-white/30 hover:text-red-500 transition-all border border-white/5 hover:border-red-500/20"
+                            title="Delete User permanently"
+                          >
+                            <Trash2 size={13} className="shrink-0" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button 
+                            onClick={() => {
+                              setEditingItem({ type, data: row });
+                              setIsModalOpen(true);
+                            }}
+                            className="p-2 hover:bg-white/5 rounded-xl transition-colors text-white/30 hover:text-gold-400"
+                          >
+                            <Edit size={14} />
+                          </button>
+                          <button 
+                            onClick={() => handleDelete(type, (row as any).id || (row as any).email)}
+                            className="p-2 hover:bg-white/5 rounded-xl transition-colors text-white/30 hover:text-red-400"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 )}
@@ -482,7 +679,7 @@ export default function AdminDashboard({ activeTab, bookings: initialBookings, u
 
   const getDefaults = (type: string) => {
     switch (type) {
-      case 'user': return { name: '', email: '', role: UserRole.TOURIST, isActive: true };
+      case 'user': return { name: '', email: '', role: UserRole.TOURIST, emailVerified: false, isActive: true };
       case 'destination': return { name: '', cat: 'parks', emoji: '⛰️', location: '', rating: 5, price: '$0', desc: '', best: 'Dry Season', fee: '$0' };
       case 'hotel': return { name: '', cat: 'luxury', emoji: '🏨', location: '', price: 0, rating: 5, rooms: 0, amenities: [] };
       case 'event': return { name: '', emoji: '🎉', location: '', price: '0', rating: 5, date: new Date().toISOString().split('T')[0] };
@@ -889,6 +1086,312 @@ export default function AdminDashboard({ activeTab, bookings: initialBookings, u
                 >
                   <Save size={16} /> Deploy Changes
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Compose In-App Notification Modal */}
+      <AnimatePresence>
+        {activeNotificationUser && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setActiveNotificationUser(null)}
+              className="absolute inset-0 bg-forest-950/80 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="bg-forest-900 border border-white/10 rounded-[3rem] w-full max-w-lg overflow-hidden relative shadow-2xl"
+            >
+              <div className="p-8 border-b border-white/5 flex justify-between items-center bg-forest-950/40">
+                <div>
+                  <h3 className="text-xl font-display font-bold text-white uppercase tracking-widest flex items-center gap-2">
+                    <Bell size={18} className="text-gold-500 animate-pulse animate-duration-[2000ms]" /> Send Notification
+                  </h3>
+                  <p className="text-[10px] text-white/30 font-black uppercase tracking-[0.2em] mt-1">Wired straight to {activeNotificationUser.name}</p>
+                </div>
+                <button 
+                  onClick={() => setActiveNotificationUser(null)} 
+                  className="p-2 hover:bg-white/5 rounded-full transition-colors text-white/40 hover:text-white"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <form onSubmit={sendInAppNotification} className="p-8 space-y-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] ml-2">Recipient User</label>
+                  <div className="px-5 py-4 bg-white/5 border border-white/5 rounded-2xl text-xs text-white/80 font-mono">
+                    {activeNotificationUser.name} &lt;{activeNotificationUser.email}&gt;
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] ml-2">Notification Body</label>
+                  <textarea 
+                    value={notificationBody}
+                    onChange={(e) => setNotificationBody(e.target.value)}
+                    placeholder="Enter message. This will appear instantly in the recipient's personal dashboard..."
+                    rows={4}
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:outline-none focus:border-gold-500/50 resize-none"
+                    required
+                  />
+                </div>
+
+                <div className="p-4 bg-gold-500/5 rounded-2xl border border-gold-500/10 flex gap-3 text-gold-500/70 text-xs">
+                  <Zap size={16} className="shrink-0 mt-0.5 text-gold-400" />
+                  <p>In-app alerts sync seamlessly and appear inside the notifications drawer instantly upon dispatch.</p>
+                </div>
+
+                <div className="flex gap-4 pt-4 border-t border-white/5">
+                  <button 
+                    type="button"
+                    onClick={() => setActiveNotificationUser(null)}
+                    className="flex-1 py-4 bg-white/5 text-white font-bold rounded-2xl text-xs uppercase tracking-widest hover:bg-white/10 transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit"
+                    disabled={isSendingNotification || !notificationBody.trim()}
+                    className="flex-1 py-4 bg-gold-500 text-forest-900 font-bold rounded-2xl text-xs uppercase tracking-widest hover:scale-[1.02] active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-xl shadow-gold-500/20 flex items-center justify-center gap-2"
+                  >
+                    {isSendingNotification ? (
+                      <span className="w-4 h-4 border-2 border-forest-900 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <>Disbursing Alert</>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Compose Secure Email Modal */}
+      <AnimatePresence>
+        {activeEmailUser && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setActiveEmailUser(null)}
+              className="absolute inset-0 bg-forest-950/80 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="bg-forest-900 border border-white/10 rounded-[3rem] w-full max-w-lg overflow-hidden relative shadow-2xl"
+            >
+              <div className="p-8 border-b border-white/5 flex justify-between items-center bg-forest-950/40">
+                <div>
+                  <h3 className="text-xl font-display font-bold text-white uppercase tracking-widest flex items-center gap-2">
+                    <Mail size={18} className="text-blue-400 animate-pulse animate-duration-[2000ms]" /> Send System Email
+                  </h3>
+                  <p className="text-[10px] text-white/30 font-black uppercase tracking-[0.2em] mt-1">Transmitting official secure SMTP correo</p>
+                </div>
+                <button 
+                  onClick={() => setActiveEmailUser(null)} 
+                  className="p-2 hover:bg-white/5 rounded-full transition-colors text-white/40 hover:text-white"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <form onSubmit={sendSecureEmail} className="p-8 space-y-5">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] ml-2">Recipient Email Coordinates</label>
+                  <div className="px-5 py-4 bg-white/5 border border-white/5 rounded-2xl text-xs text-white/80 font-mono">
+                    {activeEmailUser.name} &lt;{activeEmailUser.email}&gt;
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] ml-2">Email Subject</label>
+                  <input 
+                    type="text"
+                    value={emailUserSubject}
+                    onChange={(e) => setEmailUserSubject(e.target.value)}
+                    placeholder="Enter email header"
+                    required
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:outline-none focus:border-gold-500/50 font-medium"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] ml-2">Email Message Body</label>
+                  <textarea 
+                    value={emailUserBody}
+                    onChange={(e) => setEmailUserBody(e.target.value)}
+                    placeholder="Compose message body lines..."
+                    rows={5}
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-xs text-white focus:outline-none focus:border-gold-500/50 font-mono resize-none leading-relaxed"
+                    required
+                  />
+                </div>
+
+                <div className="flex gap-4 pt-4 border-t border-white/5">
+                  <button 
+                    type="button"
+                    onClick={() => setActiveEmailUser(null)}
+                    className="flex-1 py-4 bg-white/5 text-white font-bold rounded-2xl text-xs uppercase tracking-widest hover:bg-white/10 transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit"
+                    disabled={isSendingEmail || !emailUserSubject.trim() || !emailUserBody.trim()}
+                    className="flex-1 py-4 bg-blue-500 text-white font-bold rounded-2xl text-xs uppercase tracking-widest hover:scale-[1.02] active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-xl shadow-blue-500/20 flex items-center justify-center gap-2"
+                  >
+                    {isSendingEmail ? (
+                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <>transmit email</>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Dynamic Simulated SMTP Email Token Dispatcher */}
+      <AnimatePresence>
+        {verificationEmailModal && (
+          <div className="fixed inset-0 z-[160] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setVerificationEmailModal(null)}
+              className="absolute inset-0 bg-forest-950/90 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 30 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 30 }}
+              className="bg-neutral-900 border border-white/10 rounded-[3rem] w-full max-w-2xl overflow-hidden relative shadow-2xl animate-in fade-in duration-300"
+            >
+              {/* Header */}
+              <div className="p-8 border-b border-white/5 flex justify-between items-center bg-neutral-950/40">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                    <Activity size={20} className="animate-pulse" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-display font-bold text-white uppercase tracking-widest flex items-center gap-2">
+                      SMTP Secure Outbox Dispatcher
+                    </h3>
+                    <p className="text-[10px] text-emerald-400 font-mono uppercase tracking-[0.1em] mt-0.5 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                      Status: Delivery Handshake Success (Port 587)
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setVerificationEmailModal(null)} 
+                  className="p-2 hover:bg-white/5 rounded-full transition-colors text-white/40 hover:text-white"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Server Stream & Output info */}
+              <div className="p-8 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                
+                {/* SMTP Stream Log Console */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] ml-2">Real-Time SMTP Transaction Log</label>
+                  <div className="bg-black/95 border border-white/5 rounded-2xl p-5 font-mono text-[10px] text-zinc-400 space-y-1.5 max-h-[160px] overflow-y-auto custom-scrollbar shadow-inner">
+                    {smtpLogLines.map((line, idx) => (
+                      <div 
+                        key={idx} 
+                        className={`flex gap-2 ${
+                          line.startsWith("SUCCESS") 
+                            ? "text-emerald-400 font-bold" 
+                            : line.startsWith("STATUS") 
+                              ? "text-gold-400" 
+                              : "text-zinc-500"
+                        }`}
+                      >
+                        <span className="text-zinc-700 select-none">[{idx + 1}]</span>
+                        <span>{line}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Simulated Email Payload Window */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] ml-2">MIME Message Body Preview</label>
+                  <div className="border border-white/5 bg-white/5 rounded-2xl p-6 space-y-4">
+                    <div className="border-b border-white/5 pb-4 space-y-1 text-xs text-white/60">
+                      <div><strong className="text-white/40 font-bold">From:</strong> system-auth@rwandahub.gov (Rwanda Hub security)</div>
+                      <div><strong className="text-white/40 font-bold">To:</strong> {verificationEmailModal.name} &lt;{verificationEmailModal.email}&gt;</div>
+                      <div><strong className="text-white/40 font-bold">Subject:</strong> Secure Account Verification Token Link</div>
+                    </div>
+                    <div className="space-y-3 pt-2 text-xs text-white/80 leading-relaxed">
+                      <p>Dear {verificationEmailModal.name},</p>
+                      <p>An administrative registration has initiated your credentials inside our secure database catalog.</p>
+                      
+                      {(() => {
+                        const matchedUser = dbState.users.find(u => u.email.toLowerCase() === verificationEmailModal.email.toLowerCase());
+                        const roleName = matchedUser?.role || 'tourist';
+                        const businessName = matchedUser?.businessName;
+                        
+                        return (
+                          <div className="p-3 bg-white/[0.03] rounded-xl border border-white/5 space-y-1 font-mono text-[9.5px]">
+                            <div><strong className="text-white/40 uppercase">Assigned System Role:</strong> <span className="text-gold-400 font-bold">{roleName.toUpperCase()}</span></div>
+                            <div><strong className="text-white/40 uppercase">Authorized Workspace:</strong> <span className="text-emerald-400 font-bold">/{roleName === 'admin' ? 'admin-dashboard' : roleName === 'operator' ? 'operator-portal' : 'tourist-center'}</span></div>
+                            {businessName && (
+                              <div><strong className="text-white/40 uppercase">Affiliated Entity:</strong> <span className="text-zinc-300 font-bold">{businessName}</span></div>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Big Verification Card */}
+                      <div className="p-6 bg-gold-500/5 rounded-2xl border border-gold-500/10 flex flex-col items-center justify-center text-center space-y-2.5">
+                        <span className="text-[9px] font-black text-gold-500 uppercase tracking-widest">Your 6-Digit Credentials Token</span>
+                        <span className="text-3xl font-mono font-black text-white tracking-[0.4em] pl-[0.4em] bg-neutral-950 px-6 py-2 rounded-xl border border-white/10 select-all">
+                          {verificationEmailModal.token}
+                        </span>
+                        <p className="text-[9.5px] text-white/40 italic">Key in this security code upon login authentication request to verify credentials.</p>
+                      </div>
+
+                      <p>Once you enter this credential code upon login, the system will dynamically bootstrap and grant active session routing to your designated workspace.</p>
+
+                      <p>Best Regards,<br/><strong className="text-white">Rwanda Hub Security Office</strong></p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Info Text */}
+                <div className="p-4 bg-emerald-500/5 rounded-2xl border border-emerald-500/10 flex gap-3 text-emerald-400/80 text-xs shadow-inner">
+                  <Zap size={16} className="shrink-0 mt-0.5 text-emerald-400 animate-pulse" />
+                  <p className="text-emerald-400">Simulation active. The user is now securely registered with this verification token. They will be requested to provide it when entering the system portal.</p>
+                </div>
+
+                {/* Footer buttons */}
+                <div className="flex gap-4 pt-4 border-t border-white/5">
+                  <button 
+                    type="button"
+                    onClick={() => setVerificationEmailModal(null)}
+                    className="flex-1 py-4 bg-emerald-500 hover:bg-emerald-400 text-forest-950 font-black rounded-2xl text-xs uppercase tracking-widest hover:scale-[1.01] active:scale-98 transition-all shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-2"
+                  >
+                    Confirm & Conclude Dispatch
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>

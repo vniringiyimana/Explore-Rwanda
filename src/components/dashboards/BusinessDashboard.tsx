@@ -3,7 +3,7 @@ import { Lock, Users, Calendar, DollarSign, Star, Settings, Plus, MessageSquare,
 import { DashboardProps, UserRole } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
 import CommunicationCenter from './CommunicationCenter';
-import { MASTER_EMAIL } from '../../constants';
+import { MASTER_EMAIL, ALT_MASTER_EMAIL } from '../../constants';
 
 interface Listing {
   id: string;
@@ -16,7 +16,7 @@ interface Listing {
 }
 
 export default function BusinessDashboard({ activeTab, user, bookings }: DashboardProps) {
-  const isMaster = user.email.toLowerCase() === MASTER_EMAIL.toLowerCase();
+  const isMaster = user.email.toLowerCase() === MASTER_EMAIL.toLowerCase() || user.email.toLowerCase() === ALT_MASTER_EMAIL.toLowerCase();
 
   if (user.role !== UserRole.OPERATOR && !isMaster) {
     return (

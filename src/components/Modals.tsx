@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Calendar, Users, User as UserIcon, Briefcase, MapPin, Star, CheckCircle, Mail, ExternalLink, ShieldCheck, CreditCard, Smartphone, Clock, ChevronRight, Zap, Coffee, Plane, Minus, FileText } from 'lucide-react';
 import { User, UserRole, Hotel, Review } from '../types';
-import { DESTINATIONS, HOTELS, EXPERIENCES, TRANSPORT_OPTIONS, EVENTS, UI_TRANSLATIONS, MASTER_EMAIL } from '../constants';
+import { DESTINATIONS, HOTELS, EXPERIENCES, TRANSPORT_OPTIONS, EVENTS, UI_TRANSLATIONS, MASTER_EMAIL, ALT_MASTER_EMAIL } from '../constants';
 import { dbService } from '../services/db';
 
 import { auth } from '../lib/firebase';
@@ -55,6 +55,7 @@ export default function Modals({ isOpen, onClose, type, bookingData, hotelId, us
   const [details, setDetails] = useState<BookingDetails | null>(null);
   const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
   const [showReceipt, setShowReceipt] = useState(false);
+  const [showEmailMockup, setShowEmailMockup] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'momo'>('card');
   const [selectedSeat, setSelectedSeat] = useState<string | null>(null);
 
@@ -106,7 +107,7 @@ export default function Modals({ isOpen, onClose, type, bookingData, hotelId, us
     }
 
     // Role Restriction Logic
-    const isMaster = email.toLowerCase() === MASTER_EMAIL.toLowerCase();
+    const isMaster = email.toLowerCase() === MASTER_EMAIL.toLowerCase() || email.toLowerCase() === ALT_MASTER_EMAIL.toLowerCase();
     
     if (roleSelection === UserRole.ADMIN) {
       if (!isMaster) {
@@ -168,6 +169,20 @@ export default function Modals({ isOpen, onClose, type, bookingData, hotelId, us
             return;
           }
 
+          const isMaster = email.toLowerCase() === MASTER_EMAIL.toLowerCase() || email.toLowerCase() === ALT_MASTER_EMAIL.toLowerCase();
+
+          if (existingUser && existingUser.role !== roleSelection && !isMaster) {
+            setAuthError(`Role Mismatch: Your credentials belong to an authorized "${existingUser.role.toUpperCase()}" account, not "${roleSelection.toUpperCase()}".`);
+            setAuthLoading(false);
+            return;
+          }
+
+          if (existingUser.password && existingUser.password !== password) {
+            setAuthError("Authentication Failure: The password provided does not match our records for this email.");
+            setAuthLoading(false);
+            return;
+          }
+
           if (existingUser.isActive === false) {
             setAuthError("This user account is currently set to Inactive. Please contact the platform administrators.");
             setAuthLoading(false);
@@ -176,16 +191,25 @@ export default function Modals({ isOpen, onClose, type, bookingData, hotelId, us
 
           // Protect access to unverified emails
           if (!existingUser.emailVerified) {
-            const computedToken = Math.floor(100000 + Math.random() * 900000).toString();
+            const computedToken = existingUser.verificationToken || Math.floor(100000 + Math.random() * 900000).toString();
+            if (!existingUser.verificationToken) {
+              dbService.updateUser(existingUser.id, { verificationToken: computedToken });
+            }
             setVerificationPendingUser(existingUser);
             setVerificationPendingCode(computedToken);
-            setVerificationPendingMsg(`Profile verification required before entry. Secure token sent again to: ${existingUser.email}`);
-            window.dispatchEvent(new CustomEvent('app-toast', { detail: `✉️ Resent Token to ${existingUser.email}` }));
+            setVerificationPendingMsg(`Profile verification required before entry. Secure token dispatched to: ${existingUser.email}`);
+            window.dispatchEvent(new CustomEvent('app-toast', { detail: `✉️ Verification Token is: ${computedToken}` }));
             setAuthLoading(false);
             return;
           }
 
-          onConfirm(existingUser, `Welcome to the Local Sandbox, ${existingUser.name}! 🎉`);
+          const resolvedUserRole = isMaster ? roleSelection : existingUser.role;
+          const userWithBypass = {
+            ...existingUser,
+            role: resolvedUserRole
+          };
+
+          onConfirm(userWithBypass, `Welcome to the Local Sandbox, ${userWithBypass.name}! 🎉`);
         }
       } catch (e: any) {
         console.error("Sandbox auth error:", e);
@@ -243,6 +267,14 @@ export default function Modals({ isOpen, onClose, type, bookingData, hotelId, us
         const dbState = dbService.get();
         const existingUser = dbState.users.find(u => u.email.toLowerCase() === email.toLowerCase());
 
+        const isMaster = email.toLowerCase() === MASTER_EMAIL.toLowerCase() || email.toLowerCase() === ALT_MASTER_EMAIL.toLowerCase();
+
+        if (existingUser && existingUser.role !== roleSelection && !isMaster) {
+          setAuthError(`Role Mismatch: Your credentials belong to an authorized "${existingUser.role.toUpperCase()}" account, not "${roleSelection.toUpperCase()}".`);
+          setAuthLoading(false);
+          return;
+        }
+
         if (existingUser && existingUser.isActive === false) {
           setAuthError("This user account is currently set to Inactive. Please contact the platform administrators.");
           setAuthLoading(false);
@@ -270,7 +302,7 @@ export default function Modals({ isOpen, onClose, type, bookingData, hotelId, us
           id: firebaseUser.uid,
           email: firebaseUser.email!,
           name: firebaseUser.displayName || (existingUser?.name) || email.split('@')[0],
-          role: existingUser?.role || UserRole.TOURIST,
+          role: isMaster ? roleSelection : (existingUser?.role || UserRole.TOURIST),
           emailVerified: true,
           isActive: existingUser?.isActive ?? true
         };
@@ -451,6 +483,7 @@ startxref
       setDetails(null);
       setEmailStatus('idle');
       setShowReceipt(false);
+      setShowEmailMockup(false);
       setPaymentMethod('card');
       setSelectedSeat(null);
       setBookingLoading(false);
@@ -537,7 +570,19 @@ startxref
       
       // Simulate email/SMS sending
       setEmailStatus('sending');
-      setTimeout(() => setEmailStatus('sent'), 1500);
+      setTimeout(() => {
+        setEmailStatus('sent');
+        dbService.addEmailLog({
+          bookingId: newBooking.id,
+          recipient: newBooking.email,
+          itemName: newBooking.itemName,
+          sender: 'dispatch@rwandahub.com',
+          subject: `🎟️ Your Rwanda Hub Travel Portal Ticket & Itinerary [Ref: ${newBooking.id}]`,
+          status: 'sent',
+          pdfSize: '24 KB',
+          qrData: `rwandahub://ticket/${newBooking.id}/${encodeURIComponent(newBooking.itemName)}/${newBooking.date}/${newBooking.partySize || 'Solo'}`
+        });
+      }, 1500);
     }, 2500);
   };
 
@@ -703,6 +748,36 @@ startxref
             </div>
 
             <form onSubmit={handleAuthSubmit} className="space-y-5">
+              {/* Always ask for role selection at login & registration */}
+              <div className="bg-white/[0.02] p-4 rounded-2xl border border-white/5 space-y-3">
+                <label className="block text-[9px] font-black text-white/40 uppercase tracking-[0.15em] ml-1">
+                  🔑 REQUIRED: IDENTIFY PORTAL ACCESS ROLE
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { role: UserRole.TOURIST, label: 'Standard Explorer', emoji: '🧭' },
+                    { role: UserRole.ADMIN, label: 'Administrator', emoji: '🔐' },
+                    { role: UserRole.OPERATOR, label: 'Business Partner', emoji: '💼' },
+                    { role: UserRole.EDITOR, label: 'Content Editor', emoji: '📝' },
+                    { role: UserRole.MODERATOR, label: 'Community Moderator', emoji: '🛡️' }
+                  ].map((item) => (
+                    <button
+                      key={item.role}
+                      type="button"
+                      onClick={() => setRoleSelection(item.role)}
+                      className={`px-2.5 py-3 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border flex items-center gap-1.5 justify-center cursor-pointer ${
+                        roleSelection === item.role
+                          ? 'bg-gold-500 border-gold-400 text-forest-900 shadow-md shadow-gold-500/10'
+                          : 'bg-white/5 border-white/5 text-white/50 hover:text-white hover:bg-white/10'
+                      } ${item.role === UserRole.MODERATOR ? 'col-span-2' : ''}`}
+                    >
+                      <span className="text-xs shrink-0">{item.emoji}</span>
+                      <span className="truncate">{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {authError && (
                 <motion.div 
                   initial={{ opacity: 0, y: -10 }} 
@@ -754,22 +829,6 @@ startxref
                       <label className="block text-[10px] font-bold text-white/30 uppercase tracking-[0.2em] mb-2 ml-1">Confirm Password</label>
                       <input name="confirmPassword" type="password" required placeholder="••••••••" className="w-full bg-white/5 border border-white/10 rounded-xl px-5 py-3.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-gold-400/50 transition-all" />
                     </motion.div>
-                  )}
-                  {authMode === 'register' && (
-                    <div>
-                      <label className="block text-[10px] font-bold text-white/30 uppercase tracking-[0.2em] mb-2 ml-1">Identity Access</label>
-                      <select 
-                        value={roleSelection}
-                        onChange={(e) => setRoleSelection(e.target.value as UserRole)}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-5 py-4 text-xs text-white focus:outline-none focus:border-gold-400/50 appearance-none font-bold"
-                      >
-                        <option value={UserRole.TOURIST} className="bg-forest-900 text-sm py-2">Standard Explorer</option>
-                        <option value={UserRole.ADMIN} className="bg-forest-900 text-sm py-2">Platform Administrator</option>
-                        <option value={UserRole.OPERATOR} className="bg-forest-900 text-sm py-2">Business Partner</option>
-                        <option value={UserRole.EDITOR} className="bg-forest-900 text-sm py-2">Content Editor</option>
-                        <option value={UserRole.MODERATOR} className="bg-forest-900 text-sm py-2">Community Moderator</option>
-                      </select>
-                    </div>
                   )}
                 </motion.div>
               </AnimatePresence>
@@ -1191,6 +1250,151 @@ startxref
     </div>
   );
 
+  const renderEmailMockup = (data: any) => {
+    if (!details) return null;
+    const qrData = `rwandahub://ticket/${details.bookingId}/${encodeURIComponent(data.name)}/${details.date}/${details.partySize || 'Solo'}`;
+    const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&color=0a1a0f&bgcolor=ffffff&data=${encodeURIComponent(qrData)}`;
+
+    return (
+      <div className="bg-slate-900 border border-white/10 rounded-2xl overflow-hidden shadow-2xl text-left text-slate-100">
+        <div className="bg-slate-950 px-4 py-3 flex items-center justify-between border-b border-white/5 text-xs text-white/50">
+          <div className="flex items-center gap-2">
+            <span className="w-3 h-3 rounded-full bg-red-500/80" />
+            <span className="w-3 h-3 rounded-full bg-yellow-500/80" />
+            <span className="w-3 h-3 rounded-full bg-green-500/80" />
+          </div>
+          <span className="font-mono text-[10px] uppercase tracking-widest text-white/30">Official Email Transmitter Channel</span>
+          <button 
+            onClick={() => setShowEmailMockup(false)}
+            className="text-[10px] hover:text-white font-bold bg-white/5 px-2 py-0.5 rounded-md transition-colors cursor-pointer"
+          >
+            CLOSE VIEW
+          </button>
+        </div>
+
+        <div className="bg-slate-900/50 p-3 border-b border-white/5 flex items-center gap-2">
+          <div className="bg-slate-950 border border-white/10 px-3 py-1.5 rounded-lg text-[10px] font-mono text-slate-400 flex items-center gap-1.5 flex-1 min-w-0">
+            <ShieldCheck size={12} className="text-emerald-400 shrink-0" />
+            <span className="text-white/30 select-none shrink-0 text-slate-500 font-bold">https://</span>
+            <span className="truncate">secure-mail.rwandahub.com/view/BK-{details.bookingId}</span>
+          </div>
+        </div>
+
+        <div className="p-4 space-y-2 border-b border-white/5 text-xs text-slate-300">
+          <div>
+            <span className="text-slate-500 inline-block w-16 select-none font-medium">From:</span>
+            <strong className="text-white">Rwanda Hub Dispatch Service</strong> &lt;<span className="text-emerald-400">dispatch@rwandahub.com</span>&gt;
+            <span className="ml-2 inline-flex items-center gap-0.5 px-1 bg-emerald-500/10 text-emerald-400 text-[8px] rounded border border-emerald-500/20 font-mono font-bold">VERIFIED GSP</span>
+          </div>
+          <div>
+            <span className="text-slate-500 inline-block w-16 select-none font-medium">To:</span>
+            <span className="text-white font-mono">{details.email}</span>
+          </div>
+          <div>
+            <span className="text-slate-500 inline-block w-16 select-none font-medium">Subject:</span>
+            <strong className="text-gold-400">🎟️ Your Rwanda Hub Travel Portal Ticket & Itinerary [Ref: {details.bookingId}]</strong>
+          </div>
+          <div>
+            <span className="text-slate-500 inline-block w-16 select-none font-medium">Date:</span>
+            <span className="text-slate-400">{new Date().toUTCString()} (Rwanda Inbound API Direct)</span>
+          </div>
+        </div>
+
+        <div className="bg-white text-slate-800 p-6 md:p-8 max-h-[50vh] overflow-y-auto font-sans leading-relaxed">
+          <div className="max-w-xl mx-auto space-y-6">
+            <div className="text-center pb-6 border-b border-slate-100">
+              <span className="text-2xl block mb-2">🇷🇼</span>
+              <h1 className="text-xl font-bold text-slate-900 uppercase tracking-tight">Explore Rwanda Hub</h1>
+              <p className="text-[10px] text-slate-500 font-bold tracking-widest uppercase mt-0.5 animate-pulse">National Tourism Portal & Smart Registry</p>
+            </div>
+
+            <div className="space-y-3">
+              <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wide">Muraho / Welcome! Your booking is successfully registered.</h2>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Dear <strong className="text-slate-900">{details.travelerName || user?.name || 'Valued Guest'}</strong>, your booking request has been successfully processed and verified under escrow. A physical copy of your registration is enclosed in this message as a digital gate pass.
+              </p>
+            </div>
+
+            <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-xl flex flex-col items-center text-center space-y-3">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Digital Boarding Pass</span>
+              
+              <div className="p-2 bg-white border border-slate-200 rounded-lg shadow-sm">
+                <img 
+                  src={qrImageUrl} 
+                  alt="Gate Access QR Code" 
+                  className="w-36 h-36 border border-slate-100"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-sm font-mono font-bold text-slate-900">{details.bookingId}</span>
+                <span className="text-[10px] text-slate-500 block">Cryptographically secured ticket reference. Present at arrival point.</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Itinerary Metadata</h3>
+              <div className="border border-slate-200/80 rounded-xl overflow-hidden text-xs">
+                {[
+                  { label: "Destination/Stay", val: data.name },
+                  { label: "Traveler Email", val: details.email },
+                  { label: "Date of Activity", val: details.date },
+                  { label: "Time Schedule", val: details.time || "Open Schedule" },
+                  { label: "Party/Group Size", val: details.partySize },
+                  { label: "Assigned Seat/Slot", val: details.seat || "General Inscription" },
+                  { label: "Payment Status", val: "PAID / TRANSFERRED", highlight: "text-emerald-600 font-bold" }
+                ].map((row, i) => (
+                  <div key={i} className={`flex justify-between items-center px-4 py-2.5 ${i % 2 === 0 ? 'bg-slate-50/50' : 'bg-white'} border-b border-slate-100 last:border-0`}>
+                    <span className="text-slate-500 font-medium">{row.label}</span>
+                    <span className={row.highlight || "text-slate-800 font-semibold"}>{row.val}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-100">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-2.5">Email Attachments (1 File)</span>
+              
+              <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 flex items-center justify-between hover:bg-slate-100/50 transition-all">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-red-100 text-red-600 rounded-lg">
+                    <FileText size={20} />
+                  </div>
+                  <div>
+                    <h5 className="text-xs font-bold text-slate-900 truncate max-w-[180px]">RwandaHub_Ticket_{details.bookingId}.pdf</h5>
+                    <span className="text-[10px] text-slate-500">24 KB — Standard Inbound Pass</span>
+                  </div>
+                </div>
+                
+                <button 
+                  onClick={handleDownloadReportPDF}
+                  className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-[10px] uppercase tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  Download PDF
+                </button>
+              </div>
+            </div>
+
+            <div className="pt-6 border-t border-slate-100 text-center text-[10px] text-slate-400 space-y-1">
+              <p>This confirmation is part of your Explore Rwanda Hub itinerary escrow mechanism.</p>
+              <p>© Kigali, Rwanda. All Rights Reserved. Thank you for traveling with us!</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-slate-950 p-4 border-t border-white/5 flex gap-2">
+          <button 
+            onClick={() => setShowEmailMockup(false)}
+            className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-xl text-xs font-bold uppercase tracking-wider text-center transition-colors active:scale-95 cursor-pointer"
+          >
+            ← Back to Booking Portal
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   const renderConfirmation = () => {
     if (!bookingData || !details) return null;
     let data: any = null;
@@ -1200,12 +1404,26 @@ startxref
     if (bookingData.category === 'transport') data = TRANSPORT_OPTIONS.find(t => t.id === bookingData.id);
     if (bookingData.category === 'event') data = EVENTS.find(ev => ev.id === bookingData.id);
 
+    const containerClasses = showEmailMockup 
+      ? "glass rounded-[3rem] p-6 lg:p-10 w-full max-w-2xl mx-auto border border-white/10 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.6)] relative overflow-hidden max-h-[90vh] overflow-y-auto custom-scrollbar" 
+      : "glass rounded-[3rem] p-10 w-full max-w-md mx-auto border border-gold-500/30 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.6)] relative overflow-hidden text-center max-h-[90vh] overflow-y-auto custom-scrollbar";
+
     return (
-      <div className="glass rounded-[3rem] p-10 w-full max-w-md mx-auto border border-gold-500/30 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.6)] relative overflow-hidden text-center max-h-[90vh] overflow-y-auto custom-scrollbar">
+      <div className={containerClasses}>
         <div className="absolute top-0 left-0 w-full h-1 bg-linear-to-r from-gold-400 to-gold-600" />
         
         <AnimatePresence mode="wait">
-          {!showReceipt ? (
+          {showEmailMockup ? (
+            <motion.div
+              key="emailMockup"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="text-left w-full"
+            >
+              {renderEmailMockup(data)}
+            </motion.div>
+          ) : !showReceipt ? (
             <motion.div
               key="confirmation"
               initial={{ opacity: 0, y: 20 }}
@@ -1378,6 +1596,12 @@ startxref
                       className="text-[10px] text-gold-400 font-bold uppercase tracking-widest hover:text-gold-300 flex items-center justify-center gap-2"
                     >
                       Inspect Transaction Record <ChevronRight size={12} />
+                    </button>
+                    <button 
+                      onClick={() => setShowEmailMockup(true)}
+                      className="text-[10px] text-sky-400 font-bold uppercase tracking-widest hover:text-sky-300 flex items-center justify-center gap-2 mt-1"
+                    >
+                      📬 View Dispatched Email & QR ticket <ChevronRight size={12} />
                     </button>
                   </div>
                 ) : null}

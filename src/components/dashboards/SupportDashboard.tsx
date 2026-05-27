@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { DashboardProps, UserRole } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { MASTER_EMAIL } from '../../constants';
+import { MASTER_EMAIL, ALT_MASTER_EMAIL } from '../../constants';
 
 interface Alert {
   id: string;
@@ -56,7 +56,7 @@ interface HelpTicket {
 }
 
 export default function SupportDashboard({ activeTab, user, bookings }: DashboardProps) {
-  const isMaster = user.email.toLowerCase() === MASTER_EMAIL.toLowerCase();
+  const isMaster = user.email.toLowerCase() === MASTER_EMAIL.toLowerCase() || user.email.toLowerCase() === ALT_MASTER_EMAIL.toLowerCase();
 
   if (user.role !== UserRole.MODERATOR && !isMaster) {
     return (

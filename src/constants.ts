@@ -362,7 +362,8 @@ export const PHRASEBOOK: Phrase[] = [
   { en: "Delicious!", rw: "Biryoshye!", fr: "Délicieux!", sw: "Tamu sana!" }
 ];
 
-export const MASTER_EMAIL = 'vedasteniringiyimana12@gmail.com';
+export const MASTER_EMAIL = 'vedasteniringiyimana2005@gmail.com';
+export const ALT_MASTER_EMAIL = 'vedasteniringiyimana12@gmail.com';
 
 export const MAP_POINTS: MapPoint[] = [
   { id: 'kigali', title: "Kigali", emoji: "🏙️", category: 'city', desc: "Rwanda's capital — clean, vibrant, and innovative. Home to the Genocide Memorial and amazing nightlife.", pop: "1.2M", altitude: "1,567m", coordinates: { cx: 265, cy: 190 } },

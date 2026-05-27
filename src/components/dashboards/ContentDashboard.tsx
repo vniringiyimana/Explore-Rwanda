@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { DashboardProps, UserRole } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { MASTER_EMAIL } from '../../constants';
+import { MASTER_EMAIL, ALT_MASTER_EMAIL } from '../../constants';
 
 interface StoryDraft {
   id: string;
@@ -53,7 +53,7 @@ interface MediaAsset {
 }
 
 export default function ContentDashboard({ activeTab, user, bookings }: DashboardProps) {
-  const isMaster = user.email.toLowerCase() === MASTER_EMAIL.toLowerCase();
+  const isMaster = user.email.toLowerCase() === MASTER_EMAIL.toLowerCase() || user.email.toLowerCase() === ALT_MASTER_EMAIL.toLowerCase();
 
   if (user.role !== UserRole.EDITOR && !isMaster) {
     return (
